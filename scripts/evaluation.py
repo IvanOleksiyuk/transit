@@ -26,7 +26,6 @@ import dcor
 from transit.src.models.distance_correlation import DistanceCorrelation
 from transit.src.utils.hsic import HSIC_np, HSIC_torch
 log = logging.getLogger(__name__)
-from lazypredict.Supervised import LazyClassifier
 from sklearn.model_selection import train_test_split
 import copy
 
@@ -307,6 +306,7 @@ def evaluate_model(cfg, original_data, target_data, template_data):
 
     # Do some fast calassification
     if getattr(cfg.step_evaluate.procedures, "lazy_predict", True):
+        from lazypredict.Supervised import LazyClassifier
         print("starting lazy perdict block")
         print(len(target_data))
         print(len(template_data))

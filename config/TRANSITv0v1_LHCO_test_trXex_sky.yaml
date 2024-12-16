@@ -1,0 +1,40 @@
+# @package _global_
+
+defaults:
+  - _self_
+  - path: user
+  - data: LHCO_DEFAULT
+  - step_train_template: transit_reco_adv
+  - step_export_template: transit_LHCO
+  - step_export_SB1: transit_LHCO
+  - step_export_SB2: transit_LHCO
+  - step_evaluate: transit_LHCO_fast
+  - step_cwola: BDT_LHCO_allCWOLA
+  - step_export_latent: transit_LHCO
+  - step_plot_compare: transit_LHCO
+  - experiment/TRANSITv0v1_LHCO_test@_global_
+
+step_train_template:
+  model:
+    reverse_pass_mode: additional_input
+    valid_plots: False
+    afterglow_epoch: 999999999
+
+delete_existing_run_dir: True
+
+do_train_template: True
+do_export_template: True
+verbose_validation: False
+
+check_hash:
+  run_dir: ${general.run_dir}
+  generated_template_approx: 25da718c698f435507efe1af40c80b5c856b6f72edcec51ebd9deefd44196535
+  generated_template_full: 4e199acd46329f46c320605b4bd4e7fd74e36f242402124bf5f8e84944f645aa #gpu023
+
+general:
+  name: TRANSITv0v1_LHCO_test_trXex
+  subfolder: TEST/
+  seed: 12345 # For reproducibility
+  run_dir: workspaces/${general.subfolder}${general.name}
+  do_dataset_plots: False
+

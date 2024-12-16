@@ -1,0 +1,8 @@
+# @package _global_
+
+
+
+step_train_template:
+  model:
+    input_type: sky_train
+    add_standardizing_layer: True

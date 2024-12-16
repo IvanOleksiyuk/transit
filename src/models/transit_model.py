@@ -126,6 +126,7 @@ class TRANSIT(LightningModule):
         afterglow_epoch = np.inf,
         second_input_mask = False,
         total_skip = False,
+        input_type = "default"
     ) -> None:
         """
         Args:
@@ -138,6 +139,7 @@ class TRANSIT(LightningModule):
         super().__init__()
         # TODO need to preprocess the data properly!
         torch.manual_seed(seed)
+        self.input_type=input_type
         self.afterglow_epoch = afterglow_epoch
         if adversarial_cfg is not None:
             if hasattr(adversarial_cfg, "mode"):
@@ -170,14 +172,18 @@ class TRANSIT(LightningModule):
         self.total_skip = total_skip
         
         # Initialise the networks
-        x_dim = inpt_dim[0][0]
-        context_dim = inpt_dim[1][0]
+        if hasattr(inpt_dim[0], "__getitem__"):
+            x_dim = inpt_dim[0][0]
+            context_dim = inpt_dim[1][0]
+        else:
+            x_dim = inpt_dim[0]
+            context_dim = inpt_dim[1]
         self.second_input_mask = second_input_mask #By default
         
         if network_type == "partial_context":
             self.decoder_out_m = False
-            self.encoder1 = encoder_cfg(inpt_dim=x_dim, ctxt_dim=inpt_dim[1][0], outp_dim=latent_dim)
-            self.decoder = decoder_cfg(inpt_dim=latent_dim, ctxt_dim=inpt_dim[1][0], outp_dim=x_dim)
+            self.encoder1 = encoder_cfg(inpt_dim=x_dim, ctxt_dim=context_dim, outp_dim=latent_dim)
+            self.decoder = decoder_cfg(inpt_dim=latent_dim, ctxt_dim=context_dim, outp_dim=x_dim)
             self.style_injection_cond = True
             if self.adversarial:
                 if hasattr(adversarial_cfg, "discriminator"):
@@ -280,14 +286,26 @@ class TRANSIT(LightningModule):
         else:
             return self.discriminator2(torch.cat([w1, w2], dim=1))
 
-    def _shared_step(self, sample: tuple, _batch_index = None, step_type="none") -> torch.Tensor:
-        self.log(f"{step_type}_debug/global_step", self.global_step)
-        batch_size=sample[0].shape[0]
+    def interprete_input(self, sample, phase="train"):
         if self.second_input_mask:
             x_inp, mask, m_pair, m_add = sample
+        elif self.input_type=="sky_train":
+            if phase=="train":
+                x_inp, m_pair, m_add = sample[0][:, :-1], sample[0][:, -1:], sample[0][:, -1:]
+                mask = None
+            elif phase=="generate":
+                x_inp, m_pair, m_add = sample[0][:, :-1], sample[0][:, -1:], sample[1][:, -1:]
+                mask = None                
         else:
             x_inp, m_pair, m_add = sample
             mask = None
+        return x_inp, mask, m_pair, m_add
+
+    def _shared_step(self, sample: tuple, _batch_index = None, step_type="none") -> torch.Tensor:
+        self.log(f"{step_type}_debug/global_step", self.global_step)
+        batch_size=sample[0].shape[0]
+        
+        x_inp, mask, m_pair, m_add = self.interprete_input(sample)
         
         #Make sure the inputs are in the right shape
         m_pair=m_pair.reshape([x_inp.shape[0], -1])
@@ -990,15 +1008,6 @@ class TRANSIT(LightningModule):
                     self.log("valid\d_loss_gen", d_loss_gen, prog_bar=True)
             
         if batch_idx == 0 and self.valid_plots:
-            w1 = sample[0]
-            if self.second_input_mask:
-                w2 = sample[2]
-            else:
-                w2 = sample[1]
-            if self.add_standardizing_layer:
-                w1 = self.std_layer_x(w1)
-                w2 = self.std_layer_ctxt(w2)
-            
             for var in range(w1.shape[1]):
                 image = wandb.Image(self._draw_event_transport_trajectories(w1, w2, var=var, var_name=self.var_group_list[0][var], max_traj=20))
                 if wandb.run is not None:
@@ -1098,11 +1107,7 @@ class TRANSIT(LightningModule):
                     sched.step()
     
     def generate(self, sample: tuple) -> torch.Tensor:
-        if self.second_input_mask:
-            x_inp, mask, y_pair, y_new = sample
-        else:
-            x_inp, y_pair, y_new = sample
-            mask = None
+        x_inp, mask, y_pair, y_new = self.interprete_input(sample)
         
         if self.add_standardizing_layer:
             x_inp = self.std_layer_x(x_inp)
