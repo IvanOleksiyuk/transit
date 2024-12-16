@@ -1,0 +1,36 @@
+# @package _global_
+
+defaults:
+  - _self_
+  - path: user
+  - data: LHCOhlv_mjj
+  - step_train_template: transit_reco_adv
+  - step_export_template: transit_LHCO_hlv
+  - step_evaluate: transit_LHCO_fast
+  - step_cwola: BDT_LHCO_CWOLA_HLV
+  - step_export_latent: transit_LHCO
+  - step_plot_compare: transit_LHCO
+  - override step_train_template/model: TRANSITv26f_std
+  - override step_train_template/trainer: 200e_noclip.yaml
+  - override step_train_template/model/optimizer: AdamW_lr2-4
+
+step_train_template:
+  model:
+    reverse_pass_mode: additional_input
+    valid_plots: False
+
+do_train_template: True
+do_export_template: True
+do_export_latent: True
+do_evaluation: True
+do_cwola: True
+do_evaluate_cwola: True
+do_plot_compare: True
+
+verbose_validation: True
+
+general:
+  name: TRANSITv3f_HLV
+  subfolder: TEST/
+  seed: 12345 # For reproducibility
+  run_dir: workspaces/${general.subfolder}${general.name}

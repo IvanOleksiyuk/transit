@@ -1,0 +1,8 @@
+data:
+  _target_: transit.src.data.data.InMemoryDataFrameDict
+  file_path: "transit/tests/unit/fixtures/data.h5"
+  processor_cfg:
+    - _target_: transit.src.data.data.ProcessorIntervals
+      scalar_df_name: "data"
+      var_name: "x0"
+      intervals: [[-2, 0]]

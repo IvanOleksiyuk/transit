@@ -1,0 +1,11 @@
+data:
+  _target_: transit.src.data.data.InMemoryDataMergeClasses
+  class_lables: [0, 1]
+  do_shuffle: false
+  dataset_list:
+    - _target_: transit.src.data.data.InMemoryDataFrameDict
+      file_path: "transit/tests/unit/fixtures/data.h5"
+      processor_cfg: []
+    - _target_: transit.src.data.data.InMemoryDataFrameDict
+      file_path: "transit/tests/unit/fixtures/data.h5"
+      processor_cfg: []

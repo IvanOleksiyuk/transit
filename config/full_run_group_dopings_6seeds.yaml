@@ -1,0 +1,42 @@
+full_run_cfg: "TRANSITv1.yaml"
+run_dir: "workspaces/test_groups"
+# Change the seed for the template training
+several_template_train_seeds: [1, 2, 3, 4, 5, 6] 
+
+# Change the number of signal events doped 
+several_doping: [0, 50, 100, 333, 500, 667, 1000, 3000]
+check_doping: 3000 #a value from the original config file to replace
+redo: False
+run_sequentially: True # Run the experiments sequentially
+do_stability_analysis: True
+not_just_seeds: True
+
+stability_analysis_cfg:
+  run_dir: null
+  save_curves: True
+  postfix: "comb_seeds_CWOLA"
+
+  main_methods:
+    transit: 
+      rel_directory: "/"
+      prefix: "transit_"
+      postfix: "_comb_CWOLA"
+    transitLatent: 
+      rel_directory : "/"
+      prefix: "transitLatent_"
+      postfix: "_comb_CWOLA"
+
+
+  methods: #"CURTAINS": "/home/users/o/oleksiyu/WORK/hyperproject/lit/curtains/run_7",
+    supervised: 
+      abs_directory: "/home/users/o/oleksiyu/WORK/hyperproject/lit/radot/dope_3000/supervised"
+      prefix: ""
+      postfix: ""
+    idealised: 
+      abs_directory: "/home/users/o/oleksiyu/WORK/hyperproject/lit/radot/dope_3000/idealised"
+      prefix: ""
+      postfix: ""
+    radot: 
+      abs_directory: "/home/users/o/oleksiyu/WORK/hyperproject/lit/radot/dope_3000/standard"
+      prefix: ""
+      postfix: ""

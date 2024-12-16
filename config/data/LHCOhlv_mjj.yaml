@@ -1,0 +1,132 @@
+template_training:
+  _target_: transit.src.data.lhco_constituents.LHCOhlvModuleTT
+
+  val_frac: 0.1
+
+  dataset:
+    _target_: transit.src.data.lhco_constituents.LHCOhlvDatasetTT
+    _partial_: true
+    bkg_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_bkg.h5
+    sig_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_sig.h5
+    m_add_path: /srv/beegfs/scratch/groups/rodem/LHCO/lhco_event_masses.h5
+    n_bkg: null
+    n_sig: 3000
+    n_csts: 64
+    mjj_window: [[2700, 3300], [3700, 6000]]
+
+  loader_kwargs:
+    pin_memory: true
+    batch_size: 2048
+    num_workers: 0
+    drop_last: True
+
+export_template: 
+  _target_: transit.src.data.lhco_constituents.LHCOhlvModuleTT
+
+  val_frac: 0.1
+
+  dataset:
+    _target_: transit.src.data.lhco_constituents.LHCOhlvDatasetTT_export
+    _partial_: true
+    bkg_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_bkg.h5
+    sig_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_sig.h5
+    m_add_path: /srv/beegfs/scratch/groups/rodem/LHCO/lhco_event_masses.h5
+    n_bkg: null
+    n_sig: 3000
+    n_csts: 64
+    mjj_window: [[2700, 3300], [3700, 6000]]
+
+  loader_kwargs:
+    pin_memory: true
+    batch_size: 2048
+    num_workers: 0
+    drop_last: False
+
+export_latent_all: 
+  _target_: transit.src.data.lhco_constituents.LHCOhlvModuleTT
+
+  val_frac: 0.1
+
+  dataset:
+    _target_: transit.src.data.lhco_constituents.LHCOhlvDatasetTT
+    _partial_: true
+    bkg_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_bkg.h5
+    sig_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_sig.h5
+    m_add_path: /srv/beegfs/scratch/groups/rodem/LHCO/lhco_event_masses.h5
+    n_bkg: null
+    n_sig: 3000
+    n_csts: 64
+    mjj_window: [[-1, 99999999999], [99999999999, 999999999999]]
+
+  loader_kwargs:
+    pin_memory: true
+    batch_size: 2048
+    num_workers: 0
+    drop_last: False
+
+evaluation:
+  original_data: 
+    _target_: transit.src.data.lhco_constituents.LHCOhlvDatasetTT
+    bkg_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_bkg.h5
+    sig_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_sig.h5
+    m_add_path: /srv/beegfs/scratch/groups/rodem/LHCO/lhco_event_masses.h5
+    n_bkg: null
+    n_sig: 3000
+    n_csts: 64
+    mjj_window: [[2700, 3300], [3700, 6000]]
+
+  target_data: 
+    _target_: transit.src.data.lhco_constituents.LHCOhlvDatasetTT
+    bkg_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_bkg.h5
+    sig_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_sig.h5
+    m_add_path: /srv/beegfs/scratch/groups/rodem/LHCO/lhco_event_masses.h5
+    n_bkg: null
+    n_sig: 3000
+    n_csts: 64
+    mjj_window: [[3300, 3700]]
+
+cwola:
+  datasr_3000: 
+    _target_: transit.src.data.lhco_constituents.LHCOhlvDatasetTT
+    bkg_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_bkg.h5
+    sig_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_sig.h5
+    m_add_path: /srv/beegfs/scratch/groups/rodem/LHCO/lhco_event_masses.h5
+    n_bkg: null
+    n_sig: 3000
+    n_csts: 64
+    mjj_window: [[3300, 3700]]
+
+  extra_signal_3000: 
+    _target_: transit.src.data.lhco_constituents.LHCOhlvDatasetTT
+    bkg_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_bkg.h5
+    sig_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_sig.h5
+    m_add_path: /srv/beegfs/scratch/groups/rodem/LHCO/lhco_event_masses.h5
+    n_bkg: 0
+    n_sig: -3000
+    n_csts: 64
+    mjj_window: [[3300, 3700]]
+
+  extra_bkg_3000: 
+    _target_: transit.src.data.lhco_constituents.LHCOhlvDatasetTT
+    bkg_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_bkg.h5
+    sig_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_sig.h5
+    m_add_path: /srv/beegfs/scratch/groups/rodem/LHCO/lhco_event_masses.h5
+    n_bkg: null
+    n_sig: 0
+    n_csts: 64
+    mjj_window: [[2700, 3300], [3700, 6000]]
+
+  datasr_0: null
+
+  extra_signal_0: null
+
+  extra_bkg_0: null
+    
+  dataSR_latent_3000: null
+
+  dataSB_latent_3000: null
+
+  data_extra_sig_latent_3000: null
+
+  data_extra_bkg_latent_3000: null
+

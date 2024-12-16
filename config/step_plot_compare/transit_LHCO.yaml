@@ -1,0 +1,28 @@
+run_dir: ${general.run_dir}
+save_curves: True
+postfix: "comb_CWOLA"
+
+main_methods:
+  transit: 
+    abs_directory: ${general.run_dir}/plots/cwola_3000_eval/
+    prefix: ""
+    postfix: ""
+  transitLatent: 
+    abs_directory: ${general.run_dir}/plots/cwola_latent_3000_eval/
+    prefix: ""
+    postfix: ""
+
+
+methods: #"CURTAINS": "/home/users/o/oleksiyu/WORK/hyperproject/lit/curtains/run_7",
+  supervised: 
+    abs_directory: "/home/users/o/oleksiyu/WORK/hyperproject/lit/radot/dope_3000/supervised"
+    prefix: ""
+    postfix: ""
+  idealised: 
+    abs_directory: "/home/users/o/oleksiyu/WORK/hyperproject/lit/radot/dope_3000/idealised"
+    prefix: ""  
+    postfix: ""
+  radot: 
+    abs_directory: "/home/users/o/oleksiyu/WORK/hyperproject/lit/radot/dope_3000/standard"
+    prefix: ""
+    postfix: ""

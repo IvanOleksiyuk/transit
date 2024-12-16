@@ -1,0 +1,9 @@
+scheduler:
+  _target_: torch.optim.lr_scheduler.MultiStepLR
+  _partial_: True
+  milestones: [5, 10, 20, 30]
+  gamma: 0.5
+lightning:
+  monitor: valid/log_prob
+  interval: step
+  frequency: 1

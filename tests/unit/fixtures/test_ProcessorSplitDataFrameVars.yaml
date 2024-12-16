@@ -1,0 +1,7 @@
+data:
+  _target_: transit.src.data.data.InMemoryDataFrameDict
+  file_path: "transit/tests/unit/fixtures/data.h5"
+  processor_cfg:
+    - _target_: transit.src.data.data.ProcessorSplitDataFrameVars
+      frame_name: "data"
+      new_df_dict: {"data": ["x0"], "aux": ["x1"]}

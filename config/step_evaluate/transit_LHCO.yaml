@@ -1,0 +1,9 @@
+
+original_data: ${data.evaluation.original_data}
+target_data: ${data.evaluation.target_data}
+template_file:  ${general.run_dir}/template/outputs/template_sample0.h5
+debug_eval: False
+get_best: False
+do_2d_hist_instead_of_contour: False
+
+procedures: null

@@ -1,0 +1,7 @@
+data:
+  _target_: transit.src.data.data.InMemoryDataFrameDict
+  file_path: "transit/tests/unit/fixtures/data.h5"
+  processor_cfg:
+    - _target_: transit.src.data.data.ProcessorApplyCuts
+      scalar_df_name: "data"
+      cuts: ["x1 > 0"]

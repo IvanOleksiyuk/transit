@@ -1,0 +1,38 @@
+full_run_cfg: "transit_reco_cons0.01_smls0.001_adv3_LHCO_CURTAINS2048b.yaml"
+run_dir: groups/transit_reco_cons0.01_smls0.001_adv3_LHCO_CURTAINS2048b/
+# Change the seed for the template training
+several_template_train_seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+redo: False
+run_sequentially: True # Run the experiments sequentially
+do_stability_analysis: True
+not_just_seeds: False
+
+stability_analysis_cfg:
+  run_dir: null
+  save_curves: True
+  postfix: "comb_seeds_CWOLA"
+
+  main_methods:
+    transit: 
+      rel_directory: "/"
+      prefix: "transit_"
+      postfix: "_comb_CWOLA"
+    transitLatent: 
+      rel_directory : "/"
+      prefix: "transitLatent_"
+      postfix: "_comb_CWOLA"
+
+
+  methods: #"CURTAINS": "/home/users/o/oleksiyu/WORK/hyperproject/lit/curtains/run_7",
+    supervised: 
+      abs_directory: "/home/users/o/oleksiyu/WORK/hyperproject/lit/radot/dope_3000/supervised"
+      prefix: ""
+      postfix: ""
+    idealised: 
+      abs_directory: "/home/users/o/oleksiyu/WORK/hyperproject/lit/radot/dope_3000/idealised"
+      prefix: ""
+      postfix: ""
+    radot: 
+      abs_directory: "/home/users/o/oleksiyu/WORK/hyperproject/lit/radot/dope_3000/standard"
+      prefix: ""
+      postfix: ""

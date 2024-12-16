@@ -1,0 +1,21 @@
+full_run_cfg: "transit_reco_cons0.01_smls0.001_adv3_LHCO_CURTAINS2048b.yaml"
+not_just_seeds: True
+# Change the seed for the template training
+several_template_train_seeds: [1, 2, 3] 
+
+# Change signal and sideband regions
+several_SBSR:
+  - SB_set: [[3000, 3300], [3700, 4600]]
+    SR_set: [[3300, 3700]]
+    name: "33_37"
+  - SB_set: [[3000, 3700], [4000, 4600]]
+    SR_set: [[3700, 4000]]
+    name: "37_40"
+
+check_SBSR:
+  SB_get: [[3000, 3300], [3700, 4600]]
+  SR_get: [[3300, 3700]]
+
+# Change the number of signal events doped 
+several_doping: [0, 500, 1000, 2000, 3000]
+check_doping: 3000 #a value from the original config file to replace

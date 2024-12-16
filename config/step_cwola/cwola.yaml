@@ -1,0 +1,43 @@
+cwola_path: /home/users/o/oleksiyu/WORK/hyperproject/workspaces/LHCO/transit_reco_cons_DisCo_LHCO_CURTAINS/cwola/
+
+datamodule:
+  _target_: transit.src.data.data.SimpleDataModule
+  train_frac: 1
+  train_data:
+    _target_: transit.src.data.data.InMemoryDataMergeClasses
+    do_shuffle: true
+    plotting_path: /home/users/o/oleksiyu/WORK/hyperproject/workspaces/LHCO/transit_reco_cons_DisCo_LHCO_CURTAINS/plots/train_autorev_data_gauss4/
+    dataset_list:
+      - _target_: transit.src.data.data.InMemoryDataFrameDict
+        list_order: ["data"]
+        file_path: "/home/users/o/oleksiyu/scratch/DATA/LHCO/events_anomalydetection_v2.features.h5"
+        plotting_path: /home/users/o/oleksiyu/WORK/hyperproject/workspaces/test/transit_test_CURTAINS/plots/cwola_experimental/
+        processor_cfg: 
+        - _target_: transit.src.data.data.ProcessorLHCOcurtains
+          frame_name: "df"
+        - _target_: transit.src.data.data.ProcessorSplitDataFrameVars
+          frame_name: "df"
+          new_df_dict: {"data": ['m_j1', 'del_m', 'del_R', 'tau21_j1', 'tau21_j2', "m_jj"], "mass": ["m_jj"], "is_signal": ["is_signal"]}
+        - _target_: transit.src.data.data.ProcessorSignalContamination
+          frame_name: "is_signal"
+          n_contamination: 0
+        - _target_: transit.src.data.data.ProcessorIntervals
+          scalar_df_name: "mass"
+          var_name: "m_jj"
+          intervals: [[3300, 3700]]
+        - _target_: transit.src.data.data.ProcessorCATHODE
+          frame_name: "data"
+          load_pkl: /home/users/o/oleksiyu/WORK/hyperproject/workspaces/test/transit_test_CURTAINS/cathode_preprocessor.pkl
+        - _target_: transit.src.data.data.ProcessorToFloat32
+          frame_names: ["data"]
+      - _target_: transit.src.data.data.InMemoryDataFrameDict
+        list_order: ["data"]
+        file_path: "/home/users/o/oleksiyu/WORK/hyperproject/workspaces/test/transit_test_CURTAINS/template/outputs/template_sample.h5"
+        plotting_path: /home/users/o/oleksiyu/WORK/hyperproject/workspaces/test/transit_test_CURTAINS/plots/cwola_template/
+  loader_kwargs:
+    pin_memory: true
+    batch_size: 512
+    num_workers: 8 
+    drop_last: false
+
+

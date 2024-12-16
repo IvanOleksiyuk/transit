@@ -1,0 +1,84 @@
+defaults:
+  - _self_
+  - optimizer: default.yaml
+  - scheduler: cyclic.yaml
+
+network_type: partial_context
+_target_: transit.src.models.transit_model.TRANSIT
+use_m_encodig: True
+encoder_cfg: 
+  _target_: transit.mattstools.mattstools.modules_myy.DenseNetwork
+  _partial_: true
+  act_h: silu
+  act_i: none
+  nrm: none
+  hddn_dim: 128
+  num_blocks: 3
+  n_lyr_pbk: 2
+  do_res: True
+  scale_output_hidden: 1.0
+  ctxt_in_inpt: True
+  ctxt_in_hddn: True
+  ctxt_in_out: False
+decoder_cfg:
+  _target_: transit.mattstools.mattstools.modules_myy.DenseNetwork
+  _partial_: true
+  act_h: silu
+  act_i: none
+  nrm: none
+  hddn_dim: 128
+  num_blocks: 3
+  n_lyr_pbk: 2
+  do_res: True
+  scale_output_hidden: 1.0
+  ctxt_in_inpt: True
+  ctxt_in_hddn: True
+  ctxt_in_out: False
+latent_norm: False
+latent_dim: 8
+loss_cfg:
+  reco:
+    w: 1
+  consistency_x:
+    w: 0.1
+
+adversarial_cfg:
+  mode: "double_discriminator_priority"
+  discriminator2:
+    _target_: mltools.mlp.MLP
+    _partial_: true
+    outp_dim: 1
+    hddn_dim: [64, 64, 64, 64]
+    ctxt_in_hddn: True
+    ctxt_in_inpt: True
+    act_h: "prelu"
+    act_o: "sigmoid"
+  optimizer_main: default.yaml
+  optimizer_d: default.yaml
+  warmup: 5
+  g_loss_weight: 0
+  g_loss_gen_weight: 0.2
+  every_n_steps_g: 1
+  train_dis_in_warmup: False
+  g_loss_weight_in_warmup: True
+  loss_function: "binary_cross_entropy"
+  scheduler: 
+    scheduler_g:
+      _target_: torch.optim.lr_scheduler.MultiStepLR
+      _partial_: True
+      milestones: [30, 100, 150, 175, 200, 250]
+      gamma: 0.5
+    scheduler_d:
+      _target_: torch.optim.lr_scheduler.MultiStepLR
+      _partial_: True
+      milestones: [30, 100, 150, 175]
+      gamma: 0.5
+    scheduler_d2:
+      _target_: torch.optim.lr_scheduler.MultiStepLR
+      _partial_: True
+      milestones: [30, 100, 150, 175]
+      gamma: 0.5
+  gradient_clip_val: 0.1
+
+valid_plots: ${verbose_validation}
+add_standardizing_layer: True

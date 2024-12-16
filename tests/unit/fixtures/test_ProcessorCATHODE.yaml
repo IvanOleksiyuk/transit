@@ -1,0 +1,11 @@
+data:
+  _target_: transit.src.data.data.InMemoryDataFrameDict
+  file_path: "transit/tests/unit/fixtures/data_LHCO_100events.h5"
+  processor_cfg:
+    - _target_: transit.src.data.data.ProcessorLHCOcurtains
+      frame_name: "df"
+    - _target_: transit.src.data.data.ProcessorSplitDataFrameVars
+      frame_name: "df"
+      new_df_dict: {"data": ['m_j1', 'del_m', 'del_R', 'tau21_j1', "tau21_j2", "m_jj"], "is_signal": ["is_signal"]}
+    - _target_: transit.src.data.data.ProcessorCATHODE
+      frame_name: "data"

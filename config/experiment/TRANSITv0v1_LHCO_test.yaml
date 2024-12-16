@@ -1,0 +1,38 @@
+# @package _global_
+
+# defaults:
+#   - override /step_train_template/trainer: 1e_noclip.yaml
+
+path:
+  data_dir: /home/users/o/oleksiyu/DATA/small/
+
+data:
+  template_training:
+    loader_kwargs:
+      num_workers: 1
+  export_template:
+    loader_kwargs:
+      num_workers: 1
+
+step_cwola:
+  several_confs:
+    cwola_template:
+      num_folds: 3
+      num_ensemble: 1
+      max_iter: 1
+      seeds: [0, 1]
+    cwola_latent:
+      num_folds: 3
+      num_ensemble: 1
+      max_iter: 1
+      seeds: [0, 1]
+
+step_train_template:
+  model:
+    adversarial_cfg:
+      warmup: 0
+      mode: "double_discriminator"
+  trainer:
+    max_epochs: 1
+    accelerator: "cpu"
+    precision: 32

@@ -1,0 +1,8 @@
+data:
+  _target_: transit.src.data.data.InMemoryDataFrameDict
+  file_path: "transit/tests/unit/fixtures/data.h5"
+  processor_cfg:
+    - _target_: transit.src.data.data.ProcessorLoadInsertDatasets
+      ignore_length_mismatch: true
+      dataset_files:
+        - "transit/tests/unit/fixtures/data_LHCO_100events.h5"

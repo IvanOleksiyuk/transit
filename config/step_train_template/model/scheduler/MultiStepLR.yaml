@@ -1,0 +1,9 @@
+scheduler:
+  _target_: torch.optim.lr_scheduler.MultiStepLR
+  _partial_: True
+  milestones: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000]
+  gamma: 0.5
+lightning:
+  monitor: valid/log_prob
+  interval: step
+  frequency: 1

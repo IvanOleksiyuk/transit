@@ -1,0 +1,9 @@
+wandb:
+  _target_: pytorch_lightning.loggers.wandb.WandbLogger
+  offline: True
+  id: null
+  log_model: False
+  project: ${step_train_template.project_name}
+  name: ${step_train_template.network_name}
+  save_dir: ${general.run_dir}
+  resume: ${step_train_template.full_resume}

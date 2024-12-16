@@ -1,0 +1,6 @@
+data:
+  _target_: transit.src.data.data.InMemoryDataFrameDict
+  file_path: "transit/tests/unit/fixtures/data_LHCO_100events.h5"
+  processor_cfg:
+    - _target_: transit.src.data.data.ProcessorLHCOcurtains
+      frame_name: "df"

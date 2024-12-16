@@ -1,0 +1,13 @@
+
+original_data: ${data.evaluation.original_data}
+target_data: ${data.evaluation.target_data}
+template_file:  ${general.run_dir}/template/outputs/template_sample.h5
+SB1_gen_file: ${general.run_dir}/template/outputs/SB1_gen_sample.h5
+SB2_gen_file: ${general.run_dir}/template/outputs/SB2_gen_sample.h5
+debug_eval: False
+get_best: False
+do_2d_hist_instead_of_contour: True
+x_bounds: [-3, 3]
+
+procedures: 
+  lazy_predict: False

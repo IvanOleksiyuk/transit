@@ -1,0 +1,9 @@
+scheduler:
+  _target_: torch.optim.lr_scheduler.ConstantLR
+  _partial_: True
+  total_iters: 100_000
+  factor: 1
+lightning:
+  monitor: valid/log_prob
+  interval: step
+  frequency: 1

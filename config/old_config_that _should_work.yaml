@@ -1,0 +1,186 @@
+
+
+model:
+  desc: null
+  value:
+    reverse_pass_mode: additional_input
+    _target_: transit.src.models.transit_model.transit
+    use_m: true
+    encoder_mlp_config:
+      hddn_dim:
+      - 64
+      - 64
+      - 64
+      - 64
+      act_h: prelu
+    decoder_mlp_config:
+      hddn_dim:
+      - 64
+      - 64
+      - 64
+      - 64
+      act_h: prelu
+    latent_norm: true
+    latent_dim: 8
+    loss_cfg:
+      reco:
+        w: 1
+      DisCO_loss_cfg:
+        w: 0.01
+      second_derivative_smoothness:
+        w: 0.1
+        step: 0.01
+    optimizer:
+      _target_: torch.optim.AdamW
+      _partial_: true
+      lr: 0.0001
+      weight_decay: 1.0e-05
+    scheduler:
+      scheduler:
+        _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+        _partial_: true
+        T_max: 100000
+        last_epoch: -1
+        eta_min: 0
+      lightning:
+        monitor: valid/log_prob
+        interval: step
+        frequency: 1
+project_name:
+  desc: null
+  value: transit_gauss_corr
+network_name:
+  desc: null
+  value: transit_reco_DisCo_massfromgap_smooth_2024-07-09_14-00-02-406163
+ckpt_path:
+  desc: null
+  value: null
+precision:
+  desc: null
+  value: high
+compile:
+  desc: null
+  value: null
+full_resume:
+  desc: null
+  value: false
+seed:
+  desc: null
+  value: 12345
+callbacks:
+  desc: null
+  value:
+    model_checkpoint:
+      _target_: pytorch_lightning.callbacks.ModelCheckpoint
+      dirpath: workspaces/gauss_corr_4_gap_transit_usem_addgapmass/transit_reco_DisCo_massfromgap_smooth/template/checkpoints
+      filename: best_{epoch:03d}
+      monitor: valid/total_loss
+      mode: min
+      save_last: true
+      auto_insert_metric_name: false
+    model_summary:
+      _target_: pytorch_lightning.callbacks.RichModelSummary
+      max_depth: 2
+    lr_monitor:
+      _target_: pytorch_lightning.callbacks.LearningRateMonitor
+      logging_interval: step
+loggers:
+  desc: null
+  value:
+    wandb:
+      _target_: pytorch_lightning.loggers.wandb.WandbLogger
+      offline: true
+      id: null
+      log_model: false
+      project: transit_gauss_corr
+      name: transit_reco_DisCo_massfromgap_smooth_2024-07-09_14-00-02-406163
+      save_dir: workspaces/gauss_corr_4_gap_transit_usem_addgapmass/transit_reco_DisCo_massfromgap_smooth
+      resume: false
+paths:
+  desc: null
+  value:
+    output_dir: workspaces/gauss_corr_4_gap_transit_usem_addgapmass/transit_reco_DisCo_massfromgap_smooth/template
+    root_dir: /home/users/o/oleksiyu/WORK/hyperproject
+    full_path: workspaces/gauss_corr_4_gap_transit_usem_addgapmass/transit_reco_DisCo_massfromgap_smooth/template
+    wandbkey: /home/users/o/oleksiyu/WORK/keys/wandb.key
+trainer:
+  desc: null
+  value:
+    _target_: pytorch_lightning.Trainer
+    min_epochs: 1
+    max_epochs: 100
+    enable_progress_bar: true
+    accelerator: auto
+    devices: 1
+    gradient_clip_val: 5
+    precision: 32
+    check_val_every_n_epoch: 1
+    default_root_dir: workspaces/gauss_corr_4_gap_transit_usem_addgapmass/transit_reco_DisCo_massfromgap_smooth/template
+data:
+  desc: null
+  value:
+    datamodule:
+      _target_: transit.src.data.data.SimpleDataModule
+      train_frac: 0.8
+      train_data:
+        _target_: transit.src.data.data.CombDataset
+        dataset1:
+          _target_: transit.src.data.data.InMemoryDataFrameDict
+          list_order:
+          - data
+          - mass
+          file_path: /home/users/o/oleksiyu/WORK/hyperproject/dummydata/gauss_corr_4.h5
+          plotting_path: workspaces/gauss_corr_4_gap_transit_usem_addgapmass/transit_reco_DisCo_massfromgap_smooth/plots/train/
+          processor_cfg:
+          - _target_: transit.src.data.data.ProcessorSplitDataFrameVars
+            frame_name: data
+            new_df_dict:
+              data:
+              - x1
+              - x2
+              - x3
+              - x0
+              mass:
+              - x0
+          - _target_: transit.src.data.data.ProcessorIntervals
+            scalar_df_name: mass
+            var_name: x0
+            intervals:
+            - - -100000
+              - -0.5
+            - - 0.5
+              - 100000
+          - _target_: transit.src.data.data.ProcessorToFloat32
+            frame_names:
+            - data
+            - mass
+        dataset2:
+          _target_: transit.src.data.data.InMemoryDataFrameDict
+          list_order:
+          - mass_add
+          file_path: /home/users/o/oleksiyu/WORK/hyperproject/dummydata/gauss_corr_4.h5
+          plotting_path: workspaces/gauss_corr_4_gap_transit_usem_addgapmass/transit_reco_DisCo_massfromgap_smooth/plots/train/
+          processor_cfg:
+          - _target_: transit.src.data.data.ProcessorSplitDataFrameVars
+            frame_name: data
+            new_df_dict:
+              mass_add:
+              - x0
+          - _target_: transit.src.data.data.ProcessorShuffle
+          - _target_: transit.src.data.data.ProcessorToFloat32
+            frame_names:
+            - mass_add
+      loader_kwargs:
+        pin_memory: true
+        batch_size: 512
+        num_workers: 8
+        drop_last: false
+model/params/total:
+  desc: null
+  value: 51072
+model/params/trainable:
+  desc: null
+  value: 51072
+model/params/non_trainable:
+  desc: null
+  value: 0

@@ -1,0 +1,1 @@
+datamodule: ${data.template_training}

@@ -1,0 +1,13 @@
+export_latent_all:
+  seed: ${general.seed} 
+  data: ${data.export_latent_all} 
+
+  paths:
+    # output dir will be created by hydra
+    full_path:  ${general.run_dir}/template
+    output_dir:  ${general.run_dir}/export_latent
+
+  output_name: export_latent_all
+  get_best: false
+  project_name: CATHODE_LHCO
+  network_name: ${step_train_template.network_name}

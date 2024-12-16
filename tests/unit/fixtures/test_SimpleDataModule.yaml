@@ -1,0 +1,11 @@
+data:
+  _target_: transit.src.data.data.SimpleDataModule
+  train_data:
+    _target_: transit.src.data.data.InMemoryDataFrameDict
+    file_path: "transit/tests/unit/fixtures/data.h5"
+    processor_cfg: []
+  loader_kwargs:
+    pin_memory: true
+    batch_size: 512
+    num_workers: 8
+    drop_last: false

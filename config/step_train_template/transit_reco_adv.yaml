@@ -1,0 +1,18 @@
+defaults:
+  - _self_
+  - model: TRANSITv25f.yaml
+  - callbacks: default.yaml
+  - loggers: wandb.yaml
+  - paths: default.yaml
+  - trainer: default_manual.yaml
+  - data: default.yaml
+
+project_name: transit_gauss_corr # Determines output directory path and wandb project
+network_name: ${general.name}_${now:%Y-%m-%d}_${now:%H-%M-%S-%f} # Used for both saving and wandb
+ckpt_path: null # Checkpoint path to resume training
+precision: high # Should use medium if on ampere gpus
+compile: null # Can set to default for faster compiles
+full_resume: False
+seed: ${general.seed} 
+automatic_optimization: False
+

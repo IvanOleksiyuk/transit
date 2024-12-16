@@ -1,0 +1,146 @@
+defaults:
+  - _self_
+  - optimizer: default.yaml
+  - scheduler: cyclic.yaml
+
+_target_: transit.src.models.transit.TRANSIT
+network_type: partial_context
+latent_norm: False
+latent_dim: 32
+use_m_encodig: True
+second_input_mask: True
+encoder_cfg:
+  _target_: transit.mattstools.mattstools.transformers.FullTransformerEncoder
+  _partial_: true
+  te_config:
+    model_dim: 32
+    num_layers: 4
+    positional_encoding: True
+    dense_config:
+      hddn_dim: 32
+      num_blocks: 3
+      n_lyr_pbk: 1
+      act_h: silu
+      nrm: none
+  node_embd_config:
+    hddn_dim: 32
+    num_blocks: 1
+    act_h: silu
+    nrm: none
+  outp_embd_config:
+    hddn_dim: 32
+    num_blocks: 1
+    act_h: silu
+    nrm: none
+  ctxt_embd_config:
+    hddn_dim: 32
+    outp_dim: 16
+    num_blocks: 1
+    act_h: silu
+    nrm: none
+decoder_cfg:
+  _target_: transit.mattstools.mattstools.transformers.FullTransformerEncoder
+  _partial_: true
+  te_config:
+    model_dim: 32
+    num_layers: 4
+    dense_config:
+      hddn_dim: 32
+      num_blocks: 3
+      n_lyr_pbk: 1
+      act_h: silu
+      nrm: none
+  node_embd_config:
+    hddn_dim: 32
+    num_blocks: 1
+    act_h: silu
+    nrm: none
+  outp_embd_config:
+    hddn_dim: 32
+    num_blocks: 1
+    act_h: silu
+    nrm: none
+  ctxt_embd_config:
+    hddn_dim: 32
+    outp_dim: 32
+    num_blocks: 1
+    act_h: silu
+    nrm: none
+loss_cfg:
+  reco:
+    w: 1
+
+adversarial_cfg:
+  mode: "double_discriminator_priority"
+  discriminator2:
+    _target_: transit.src.models.transit_model.DiscPC
+    _partial_: true
+    architecture:
+      _target_: transit.mattstools.mattstools.simple_transformers.FullEncoder
+      _partial_: true
+      outp_dim: 8
+      transformer:
+        _target_: transit.mattstools.mattstools.simple_transformers.TransformerVectorEncoder
+        _partial_: True
+        dim: 32
+        num_sa_layers: 4
+        num_ca_layers: 2
+        init_method: beit
+        layer_config:
+          ff_mult: 2
+          num_heads: 2
+      node_embd_config:
+        hddn_dim: 32
+        num_blocks: 1
+        act_h: silu
+      outp_embd_config:
+        hddn_dim: 32
+        num_blocks: 1
+        act_h: silu
+      ctxt_embd_config:
+        hddn_dim: 32
+        outp_dim: 8
+        num_blocks: 1
+        act_h: silu
+    final_mlp:
+      _target_: transit.mattstools.mattstools.modules.DenseNetwork
+      _partial_: true
+      act_h: silu
+      nrm: none
+      hddn_dim: 32
+      num_blocks: 2
+      act_o: "sigmoid"
+  optimizer_main: default.yaml
+  optimizer_d: default.yaml
+  warmup: 5
+  g_loss_weight: 0
+  g_loss_gen_weight: 
+    _target_: transit.src.models.loss_annealing.ExponentialAnnealing
+    start: 0
+    end: 10000
+    start_val: 0.0001
+    end_val: 1
+  every_n_steps_g: 1
+  train_dis_in_warmup: False
+  g_loss_weight_in_warmup: True
+  loss_function: "binary_cross_entropy"
+  scheduler: 
+    scheduler_g:
+      _target_: torch.optim.lr_scheduler.MultiStepLR
+      _partial_: True
+      milestones: [30, 200, 225, 250]
+      gamma: 0.5
+    scheduler_d:
+      _target_: torch.optim.lr_scheduler.MultiStepLR
+      _partial_: True
+      milestones: [30, 200, 225]
+      gamma: 0.5
+    scheduler_d2:
+      _target_: torch.optim.lr_scheduler.MultiStepLR
+      _partial_: True
+      milestones: [30, 200, 225]
+      gamma: 0.5
+  gradient_clip_val: 0.1
+
+valid_plots: False
+add_standardizing_layer: True
