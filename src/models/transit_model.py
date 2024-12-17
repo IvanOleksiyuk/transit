@@ -276,7 +276,7 @@ class TRANSIT(LightningModule):
         rpm = torch.randperm(batch_size)
         if self.reverse_pass_mode == "additional_input":
             style_p = self.encode_style(m_add)[rpm]
-        if self.reverse_pass_mode == "additional_input_noise":
+        elif self.reverse_pass_mode == "additional_input_noise":
             style_p = self.encode_style(m_add)[rpm]
             max_p = style_p.max()
             min_p = style_p.min()
