@@ -1,12 +1,13 @@
 # @package _global_
 
-
-
 step_train_template:
   model:
+    reverse_pass_mode: additional_input_noise
     input_type: sky_train
     add_standardizing_layer: True
+    adversarial_cfg:
+      discriminator2:
+        hddn_dim: [32, 32, 16, 16]
   do_scale_epochs: True
   trainer:
     check_val_every_n_epoch: 10
-  

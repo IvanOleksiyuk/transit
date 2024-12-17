@@ -105,9 +105,9 @@ def main(cfg: DictConfig) -> None:
     if cfg.get("do_train_template", False):
         start_time = datetime.now()
         log.info("===================================")
-        log.info(f"Start: Train a model that will provide a us with a template")
+        log.info(f"Start: Train a model that will provide us with a template")
         train_ptl.main(cfg.step_train_template)
-        log.info(f"Finish: Train a model that will provide a us with a template. Time taken: {datetime.now() - start_time}")
+        log.info(f"Finish: Train a model that will provide us with a template. Time taken: {datetime.now() - start_time}")
         log.info(f"===================================")
         with open(rutime_file, 'a') as file:
             file.write('Train template: {}\n'.format(datetime.now() - start_time))

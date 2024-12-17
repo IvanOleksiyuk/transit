@@ -20,7 +20,8 @@ template_training:
     batch_size: 2048
     num_workers: 16
     pin_memory: False
-    drop_last: False
+    drop_last: True
+    persistent_workers: true
 
 # Please change everything that goesm below!!!
 

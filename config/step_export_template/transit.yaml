@@ -7,7 +7,6 @@ paths:
   output_dir:  ${general.run_dir}/template
 
 output_name: template_sample
-#signal_contamination_ns: [0]
 
 get_best: false
 project_name: CATHODE_LHCO

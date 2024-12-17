@@ -14,13 +14,21 @@ from transit.src.utils.hydra_utils import instantiate_collection, log_hyperparam
 
 log = logging.getLogger(__name__)
 
-# TODO pyroot utils will remove the need for ../configs
+def update_sheduler_cfgs(cfg, epoch_scale):
+    cfg.model.adversarial_cfg.scheduler.scheduler_g.milestones = [num*epoch_scale for num in cfg.model.adversarial_cfg.scheduler.scheduler_g.milestones]
+    cfg.model.adversarial_cfg.scheduler.scheduler_d.milestones = [num*epoch_scale for num in cfg.model.adversarial_cfg.scheduler.scheduler_d.milestones]
+    cfg.model.adversarial_cfg.scheduler.scheduler_d2.milestones = [num*epoch_scale for num in cfg.model.adversarial_cfg.scheduler.scheduler_d2.milestones]
+    
+    cfg.trainer.max_epochs = cfg.trainer.max_epochs*epoch_scale    
+    cfg.trainer.check_val_every_n_epoch = cfg.trainer.check_val_every_n_epoch*epoch_scale
+
 @hydra.main(
     version_base=None, config_path=str('../config'), config_name="train"
 )
 def main(cfg: DictConfig) -> None:
     wandb_key = open(cfg.paths.wandbkey, "r").read()
     wandb.login(key=wandb_key)
+    
     log.info("Setting up full job config")
     if cfg.full_resume:
         cfg = reload_original_config(cfg)
@@ -36,6 +44,18 @@ def main(cfg: DictConfig) -> None:
 
     log.info("Instantiating the data module")
     datamodule = hydra.utils.instantiate(cfg.data.datamodule)
+    
+    log.info("Scale N epochs with dataseize") #For very small datasets we have to scale the number of epochs
+    if cfg.get("do_scale_epochs", False):
+        datamodule.setup(stage="fit")
+        train_data_length = len(datamodule.train_dataloader().dataset)
+        # get the batch size
+        batch_size = datamodule.train_dataloader().batch_size
+        # get the number of batches
+        num_batches = train_data_length // batch_size
+        if num_batches < 100:
+            epoch_scale = 100 // num_batches
+        update_sheduler_cfgs(cfg, epoch_scale)
     
     log.info("Instantiating the model")
     model = hydra.utils.instantiate(cfg.model, inpt_dim=datamodule.get_dims(), var_group_list=datamodule.get_var_group_list(), seed=cfg.seed)

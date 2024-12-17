@@ -45,58 +45,6 @@ def off_diagonal(x):
     assert n == m
     return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
 
-class DiscPC(nn.Module):
-    """A generative model which uses the diffusion process on a point cloud."""
-
-    def __init__(
-        self,
-        inpt_dim,
-        ctxt_dim,
-        #normaliser_config: Mapping,
-        architecture: partial,
-        final_mlp: partial,
-    ) -> None:
-        super().__init__()
-
-        # Attributes
-        self.pc_dim = inpt_dim 
-        self.hlv_dim = ctxt_dim
-
-        # Normalisation layers
-        #self.norm = IterativeNormLayer(self.pc_dim, **normaliser_config)
-        #self.hlv_norm = IterativeNormLayer(self.hlv_dim, **normaliser_config)
-        # self.mjj_norm = IterativeNormLayer(self.mjj_dim, **normaliser_config)
-
-        # The shared layer transformer
-        self.trans = architecture(
-            inpt_dim=self.pc_dim,
-            ctxt_dim=self.hlv_dim,
-        )
-
-        # The final mlp for determining source of the data
-        self.final_mlp = final_mlp(
-            inpt_dim=self.trans.outp_dim,
-            outp_dim=1,
-            # ctxt_dim=self.mjj_dim,
-        )
-
-    def forward(self, pc, ctxt, mask=None) -> torch.Tensor:
-        """Pass through the network."""
-
-
-        # Normalise everything
-        #jet1 = self.norm(jet1, mask)
-        #hlv1 = self.hlv_norm(hlv1)
-        # mjj = self.mjj_norm(mjj)
-
-        # Process each jet seperately and sum (order invariant)
-        x = self.trans(pc, mask, ctxt)
-        
-        # Pass through the final mlp
-        return self.final_mlp(x)
-
-
-
 class TRANSIT(LightningModule):
     
     def __init__(
@@ -328,6 +276,14 @@ class TRANSIT(LightningModule):
         rpm = torch.randperm(batch_size)
         if self.reverse_pass_mode == "additional_input":
             style_p = self.encode_style(m_add)[rpm]
+        if self.reverse_pass_mode == "additional_input_noise":
+            style_p = self.encode_style(m_add)[rpm]
+            max_p = style_p.max()
+            min_p = style_p.min()
+            style_p_n = style_p + torch.randn_like(m_add)*0.05
+            style_p_n[style_p_n>max_p] = style_p[style_p_n>max_p]
+            style_p_n[style_p_n<min_p] = style_p[style_p_n<min_p]
+            style_p = style_p_n
         else:
             style_p = style[rpm]
 
@@ -375,6 +331,8 @@ class TRANSIT(LightningModule):
 
         # Consistency losses 
         if self.loss_cfg.consistency_x is not None:
+            # s_con = content.std()
+            # self.log(f"{step_type}/s_con", s_con)
             loss_back_vec = mse_loss(content, content_n).mean()
             self.log(f"{step_type}/loss_back_vec", loss_back_vec)
             if self.loss_cfg.consistency_x.w is not None:
@@ -382,6 +340,7 @@ class TRANSIT(LightningModule):
                     total_loss += loss_back_vec*self.loss_cfg.consistency_x.w
                 else:
                     total_loss += loss_back_vec*self.loss_cfg.consistency_x.w(self.global_step)
+            
 
         if self.loss_cfg.consistency_cont is not None:
             loss_back_cont = mse_loss(style_p, style_n).mean()

@@ -6,14 +6,14 @@ defaults:
   - path: user
   - data: SKY_DEFAULT
   - step_train_template: transit_reco_adv
-  - step_export_template: transit_SKY
+  - step_export_template: transit
   - step_export_SB1: transit_LHCO
   - step_export_SB2: transit_LHCO
   - step_evaluate: transit_LHCO_fast
   - step_cwola: BDT_LHCO_allCWOLA
   - step_export_latent: transit_LHCO
   - step_plot_compare: transit_LHCO
-  - experiment/TRANSITv0v1_SKY@_global_
+  - experiment/TRANSITvSKYv2_SKY@_global_
 
 
 # private=private_baobab 
@@ -46,7 +46,7 @@ do_transport_sideband: True
 verbose_validation: True
 
 general:
-  name: TRANSITv25f_SKY
+  name: TRANSITvSKYv2_SKY
   subfolder: TEST/
   seed: 12345 # For reproducibility
   run_dir: workspaces/${general.subfolder}${general.name}
