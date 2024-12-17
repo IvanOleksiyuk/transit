@@ -20,7 +20,9 @@ def update_sheduler_cfgs(cfg, epoch_scale):
     cfg.model.adversarial_cfg.scheduler.scheduler_d2.milestones = [num*epoch_scale for num in cfg.model.adversarial_cfg.scheduler.scheduler_d2.milestones]
     
     cfg.trainer.max_epochs = cfg.trainer.max_epochs*epoch_scale    
-    cfg.trainer.check_val_every_n_epoch = cfg.trainer.check_val_every_n_epoch*epoch_scale
+    #cfg.trainer.check_val_every_n_epoch = cfg.trainer.check_val_every_n_epoch*epoch_scale
+    if hasattr(cfg.model, "valid_plot_freq"):
+        cfg.model.valid_plot_freq *= epoch_scale
 
 @hydra.main(
     version_base=None, config_path=str('../config'), config_name="train"

@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - override /step_train_template/model: TRANSITvSKYv4.yaml
+
+step_train_template:
+  model:
+    reverse_pass_mode: additional_input
+    input_type: sky_train
+    add_standardizing_layer: True
+  do_scale_epochs: True
+  trainer:
+    check_val_every_n_epoch: 1

@@ -4,7 +4,7 @@ defaults:
   - callbacks: default.yaml
   - loggers: wandb.yaml
   - paths: default.yaml
-  - trainer: default_manual.yaml
+  - trainer: default.yaml
   - data: default.yaml
 
 project_name: transit_gauss_corr # Determines output directory path and wandb project

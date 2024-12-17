@@ -74,7 +74,8 @@ class TRANSIT(LightningModule):
         afterglow_epoch = np.inf,
         second_input_mask = False,
         total_skip = False,
-        input_type = "default"
+        input_type = "default",
+        valid_plot_freq = 1
     ) -> None:
         """
         Args:
@@ -87,6 +88,7 @@ class TRANSIT(LightningModule):
         super().__init__()
         # TODO need to preprocess the data properly!
         torch.manual_seed(seed)
+        self.valid_plot_freq = valid_plot_freq
         self.input_type=input_type
         self.afterglow_epoch = afterglow_epoch
         if adversarial_cfg is not None:
@@ -165,16 +167,14 @@ class TRANSIT(LightningModule):
         # For more stable checks in the shared step
         expected_attrs = ["reco", 
                         "consistency_x", 
+                        "consistency_xx", 
                         "consistency_cont", 
                         "latent_variance_cfg", 
                         "l1_reg", 
                         "DisCO_loss_cfg", 
                         "pearson_loss_cfg", 
-                        "clip_loss_cfg", 
                         "attractive", 
                         "repulsive", 
-                        "vic_reg_cfg",
-                        "loss_balancing",
                         "second_derivative_smoothness"]
         for attr in list(self.loss_cfg.keys()):
             if attr in expected_attrs:
@@ -331,8 +331,6 @@ class TRANSIT(LightningModule):
 
         # Consistency losses 
         if self.loss_cfg.consistency_x is not None:
-            # s_con = content.std()
-            # self.log(f"{step_type}/s_con", s_con)
             loss_back_vec = mse_loss(content, content_n).mean()
             self.log(f"{step_type}/loss_back_vec", loss_back_vec)
             if self.loss_cfg.consistency_x.w is not None:
@@ -350,6 +348,19 @@ class TRANSIT(LightningModule):
                     total_loss += loss_back_cont*self.loss_cfg.consistency_cont.w
                 else:
                     total_loss += loss_back_cont*self.loss_cfg.consistency_cont.w(self.global_step)
+
+        # Full forward-backward consistency
+        if self.loss_cfg.consistency_xx is not None:
+            # s_con = content.std()
+            # self.log(f"{step_type}/s_con", s_con)
+            reco_2 = self.decode(content_n, style)
+            loss_back_vec = mse_loss(x_inp, reco_2).mean()
+            self.log(f"{step_type}/loss_cons_xx", loss_back_vec)
+            if self.loss_cfg.consistency_xx.w is not None:
+                if isinstance(self.loss_cfg.consistency_xx.w, float) or isinstance(self.loss_cfg.consistency_xx.w, int):
+                    total_loss += loss_back_vec*self.loss_cfg.consistency_xx.w
+                else:
+                    total_loss += loss_back_vec*self.loss_cfg.consistency_xx.w(self.global_step)
 
         # variance loss
         if self.loss_cfg.latent_variance_cfg is not None:
@@ -966,7 +977,7 @@ class TRANSIT(LightningModule):
                     d_loss_gen= self.adversarial_loss(self.disc_reco(torch.cat([w1, generated], dim=0), torch.cat([w2, w2_perm], dim=0)),  labels)
                     self.log("valid\d_loss_gen", d_loss_gen, prog_bar=True)
             
-        if batch_idx == 0 and self.valid_plots:
+        if batch_idx == 0 and self.valid_plots and self.current_epoch%self.valid_plot_freq==0:
             for var in range(w1.shape[1]):
                 image = wandb.Image(self._draw_event_transport_trajectories(w1, w2, var=var, var_name=self.var_group_list[0][var], max_traj=20))
                 if wandb.run is not None:
