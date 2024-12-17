@@ -4,7 +4,7 @@ defaults:
   - _self_
   - private: private_baobab
   - path: user
-  - data: SKY_DEFAULT
+  - data: SKY_DEFAULT2
   - step_train_template: transit_reco_adv
   - step_export_template: transit
   - step_export_SB1: transit_LHCO
@@ -13,7 +13,7 @@ defaults:
   - step_cwola: BDT_LHCO_allCWOLA
   - step_export_latent: transit_LHCO
   - step_plot_compare: transit_LHCO
-  - experiment/TRANSITvSKYv4_SKY@_global_
+  - experiment/TRANSITvSKYv5_SKY@_global_
 
 
 # private=private_baobab 
@@ -32,9 +32,9 @@ step_train_template:
     afterglow_epoch: 999999999
     valid_plot_freq: 10
 
-delete_existing_run_dir: True
+delete_existing_run_dir: False
 
-do_train_template: True
+do_train_template: False
 do_export_template: True
 do_export_latent: False
 do_evaluation: False
@@ -43,7 +43,6 @@ do_evaluate_cwola: False
 do_plot_compare: False
 
 do_transport_sideband: True
-
 verbose_validation: True
 
 general:

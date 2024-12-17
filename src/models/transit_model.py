@@ -253,7 +253,7 @@ class TRANSIT(LightningModule):
         self.log(f"{step_type}_debug/global_step", self.global_step)
         batch_size=sample[0].shape[0]
         
-        x_inp, mask, m_pair, m_add = self.interprete_input(sample)
+        x_inp, mask, m_pair, m_add = self.interprete_input(sample, phase="train")
         
         #Make sure the inputs are in the right shape
         m_pair=m_pair.reshape([x_inp.shape[0], -1])
@@ -1077,7 +1077,7 @@ class TRANSIT(LightningModule):
                     sched.step()
     
     def generate(self, sample: tuple) -> torch.Tensor:
-        x_inp, mask, y_pair, y_new = self.interprete_input(sample)
+        x_inp, mask, y_pair, y_new = self.interprete_input(sample, phase="generate")
         
         if self.add_standardizing_layer:
             x_inp = self.std_layer_x(x_inp)

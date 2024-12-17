@@ -40,7 +40,7 @@ export_template:
     context: "pm_lat"
     bins: [-36.0, -30.0, -24.0, -18.0]
     split_frac: 0.2
-    resample: True
+    resample: False
   minmax: True
   load_config:
     batch_size: 2048
@@ -52,6 +52,7 @@ export_SB1:
   _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
     data_dir: ${private.data_dir} 
+    sample_bin: SB1
     patch_name: gaiascan_l146.2_b51.88_ra163.95_dec59.71
     feature_list:
       - latitudes
@@ -64,6 +65,7 @@ export_SB1:
     bins: [-36.0, -30.0, -24.0, -18.0]
     split_frac: 0.2
     resample: True
+    only_one_sb: "sb2"
   minmax: True
   load_config:
     batch_size: 2048
@@ -73,9 +75,9 @@ export_SB1:
 
 export_SB2:
   _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
-
   data_config:
     data_dir: ${private.data_dir} 
+    sample_bin: SB2
     patch_name: gaiascan_l146.2_b51.88_ra163.95_dec59.71
     feature_list:
       - latitudes
@@ -87,7 +89,8 @@ export_SB2:
     context: "pm_lat"
     bins: [-36.0, -30.0, -24.0, -18.0]
     split_frac: 0.2
-    resample: True
+    resample: False
+    only_one_sb: "sb1"
   minmax: True
   load_config:
     batch_size: 2048
@@ -111,7 +114,7 @@ export_latent_all:
     context: "pm_lat"
     bins: [-36.0, -30.0, -24.0, -18.0]
     split_frac: 0.2
-    resample: True
+    resample: False
   minmax: True
   load_config:
     batch_size: 2048

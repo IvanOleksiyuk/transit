@@ -251,8 +251,9 @@ def plot_feature_spread(
     shuffle=True,
     do_2d_hist_instead_of_contour=False,
     save_name=None,
+    nbins = 60,
 ):
-    nbins = 60
+    
     n_features = sampled.shape[1] #- 1
     if x_bounds is None:
         x_bounds = [-3, 3]
@@ -295,7 +296,8 @@ def plot_feature_spread(
                     axes[i, j].tick_params(
                         axis="x", which="both", direction="in", labelbottom=False
                     )
-                    axes[i, j].set_yticks([-2, 0, 2])
+                    if x_bounds[0]==-3 and x_bounds[1]==3:
+                        axes[i, j].set_yticks([-2, 0, 2])
                     if i == j == 0:
                         axes[i, j].tick_params(axis="y", colors="w")
                     elif j > 0:
@@ -376,7 +378,7 @@ def plot_feature_spread(
             transformation = rf"{tag[0]} $\rightarrow$ {tag[1]}"
 
         labels = ["Original", "Transformed", "Target"]
-        ip_handles = [Line2D([], [], color="black", linestyle="--")]
+        ip_handles = [Line2D([], [], color="green", linestyle="-")]
         other_handles = [Line2D([], [], color=colors) for colors in ["red", "blue"]]
         handles = ip_handles + other_handles
         fig.text(
