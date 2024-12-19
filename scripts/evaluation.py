@@ -28,6 +28,7 @@ from transit.src.utils.hsic import HSIC_np, HSIC_torch
 log = logging.getLogger(__name__)
 from sklearn.model_selection import train_test_split
 import copy
+from src.model.denseclassifier import run_classifier_folds
 
 def to_np(inpt: Union[torch.Tensor, tuple]) -> np.ndarray:
     """More consicse way of doing all the necc steps to convert a pytorch
@@ -41,6 +42,12 @@ def to_np(inpt: Union[torch.Tensor, tuple]) -> np.ndarray:
         inpt = inpt.half()
     return inpt.detach().cpu().numpy().reshape(inpt.shape)
 
+def check_data_loaded(names_list, data):
+    missing = []
+    for name in names_list:
+        if name not in data:
+            return missing.append(name)
+    return missing
 
 @rank_zero_only
 def reload_original_config(cfg: OmegaConf, get_best: bool = False) -> OmegaConf:
@@ -71,28 +78,32 @@ def reload_original_config(cfg: OmegaConf, get_best: bool = False) -> OmegaConf:
 )
 def main(cfg):
     log.info("Starting evaluation")
-    # Get two dataframes to compare	
-    log.info("Loading original data")
-    original_data = hydra.utils.instantiate(cfg.step_evaluate.original_data).data["data"]
-    log.info("Loading target data")
-    target_data = hydra.utils.instantiate(cfg.step_evaluate.target_data).data["data"]
-    log.info("Loading template data")
-    template_data = pd.read_hdf(cfg.step_evaluate.template_file)
+    # Get two dataframes to compare
     
-    variables = original_data.columns.tolist()
-    print(len(target_data.to_numpy()))
-    print(len(template_data.to_numpy()))
+    # Plot the transport from SB1 to SB2
+    data = {} # a dictionary to store the data
+    for key in cfg.step_evaluate.data:
+        if "file" in key:
+            data[key] = pd.read_hdf(cfg.step_evaluate.data[key])
+            print(f"Loaded data {key} with n={len(data[key])}, and vars {data[key].columns.tolist()}")
+        else:
+            data[key] = hydra.utils.instantiate(cfg.step_evaluate.data[key])
+            if cfg.step_evaluate.data[key]["_target_"]=="src.data.gdr3_dataclasses.GDR3DataModuleTop":
+                data[key] = data[key].test_dataset
+            print(f"Loaded data {key} with n={len(data[key])}, and vars {data[key].columns.tolist()}")
+    	
+    variables = data["original_data"].columns.tolist()
 
-
-    if getattr(cfg.step_evaluate.procedures, "plot_contour", True):
+    # Plot the contour plot for the generated template on SR
+    if getattr(cfg.step_evaluate.procedures, "plot_contour_SR", True):
         if cfg.step_evaluate.debug_eval:
             plot_mode="diagnose"
         else:
             plot_mode=""
         pltt.plot_feature_spread(
-            target_data[variables].to_numpy(),
-            template_data[variables].to_numpy(),
-            original_data = original_data[variables].to_numpy(),
+            data["target_data"][variables].to_numpy(),
+            data["template_file"][variables].to_numpy(),
+            original_data = data["original_data"][variables].to_numpy(),
             feature_nms = variables,
             save_dir=Path(cfg.general.run_dir),
             plot_mode=plot_mode,
@@ -100,39 +111,59 @@ def main(cfg):
             x_bounds=cfg.step_evaluate.x_bounds or None)
         print("contour plot is done")
         
-    if getattr(cfg.step_evaluate.procedures, "plot_contour_SB1vsSB2", True):
-        log.info("Loading SB1 gen data")
-        SB1_gen = pd.read_hdf(cfg.step_evaluate.SB1_gen_file)
-        log.info("Loading SB2 gen data")
-        SB2_gen = pd.read_hdf(cfg.step_evaluate.SB2_gen_file)
-        
-        SB1_data = original_data[original_data["m_jj"]<-0.5]
-        SB2_data = original_data[original_data["m_jj"]>-0.5]
-        
-        pltt.plot_feature_spread(
-            SB1_data[variables].to_numpy(),
-            SB1_gen[variables].to_numpy(),
-            original_data = SB2_data[variables].to_numpy(),
-            feature_nms = variables,
-            save_dir=Path(cfg.general.run_dir),
-            plot_mode=plot_mode,
-            do_2d_hist_instead_of_contour=cfg.step_evaluate.do_2d_hist_instead_of_contour,
-            x_bounds=cfg.step_evaluate.x_bounds or None,
-            save_name="SB2_to_SB1")
-        pltt.plot_feature_spread(
-            SB2_data[variables].to_numpy(),
-            SB2_gen[variables].to_numpy(),
-            original_data = SB1_data[variables].to_numpy(),
-            feature_nms = variables,
-            save_dir=Path(cfg.general.run_dir),
-            plot_mode=plot_mode,
-            do_2d_hist_instead_of_contour=cfg.step_evaluate.do_2d_hist_instead_of_contour,
-            x_bounds=cfg.step_evaluate.x_bounds or None,
-            save_name="SB1_to_SB2")
+    if getattr(cfg.step_evaluate.procedures, "plot_contour_SB1toSB2transport", True):
+        if check_data_loaded(["original_SB1_data", "SB1_gen_file", "original_SB2_data"], data)!=[]:
+            print("Missing data: ", check_data_loaded(["original_SB1_data", "SB1_gen_file", "original_SB2_data"], data))
+        else:
+            pltt.plot_feature_spread(
+                data["original_SB1_data"][variables].to_numpy(),
+                data["SB1_gen_file"][variables].to_numpy(),
+                original_data = data["original_SB2_data"][variables].to_numpy(),
+                feature_nms = variables,
+                save_dir=Path(cfg.general.run_dir),
+                plot_mode=plot_mode,
+                do_2d_hist_instead_of_contour=cfg.step_evaluate.do_2d_hist_instead_of_contour,
+                x_bounds=cfg.step_evaluate.x_bounds or None,
+                tag = ["SB2", "SB1"],
+                save_name="SB2_to_SB1")
+            pltt.plot_feature_spread(
+                data["original_SB2_data"][variables].to_numpy(),
+                data["SB2_gen_file"][variables].to_numpy(),
+                original_data = data["original_SB1_data"][variables].to_numpy(),
+                feature_nms = variables,
+                save_dir=Path(cfg.general.run_dir),
+                plot_mode=plot_mode,
+                do_2d_hist_instead_of_contour=cfg.step_evaluate.do_2d_hist_instead_of_contour,
+                x_bounds=cfg.step_evaluate.x_bounds or None,
+                tag = ["SB1", "SB2"],
+                save_name="SB1_to_SB2")
     
-    evaluate_model(cfg, original_data, target_data, template_data)
-    plt.close("all")
+    if getattr(cfg.step_evaluate.procedures, "plot_classifier_SB1toSB2transport", True):
+        pass
     
+    if getattr(cfg.step_evaluate.procedures, "plot_everything_else", False):
+        SB1_data = data["original_SB1_data"].to_numpy()[:, :-1]
+        SB2_data = data["original_SB2_data"].to_numpy()[:, :-1]
+        SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
+        SB2_gen = data["SB2_gen_file"].to_numpy()[:, :-1]
+        
+        evaluate_model(cfg, data["original_data"], data["target_data"], data["template_data"])
+        auc_score, threshold, data_preds = run_classifier_folds(
+            true_samples=SB2_data, 
+            template_samples=SB2_gen,
+            save_dir=Path(""),
+            tag=f"sb1to2",
+            return_threshold=False,  # if key == "sb12r" else False,
+        )
+        print(auc_score)
+        auc_score, threshold, data_preds = run_classifier_folds(
+            true_samples=SB1_data, 
+            template_samples=SB1_gen,
+            save_dir=Path(""),
+            tag=f"sb2to1",
+            return_threshold=False,  # if key == "sb12r" else False,
+        )
+        data["SB1_gen_file"]
 
 
 def plot_matrix(matrix, title, vmin=-1, vmax=1, abs=False):

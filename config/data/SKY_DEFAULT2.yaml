@@ -3,7 +3,7 @@ template_training:
 
   data_config:
     data_dir: ${private.data_dir} 
-    patch_name: gaiascan_l146.2_b51.88_ra163.95_dec59.71
+    patch_name: patch_l146.25_b51.88
     feature_list:
       - latitudes
       - longitudes
@@ -29,7 +29,7 @@ export_template:
   _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
     data_dir: ${private.data_dir} 
-    patch_name: gaiascan_l146.2_b51.88_ra163.95_dec59.71
+    patch_name: patch_l146.25_b51.88
     feature_list:
       - latitudes
       - longitudes
@@ -53,7 +53,7 @@ export_SB1:
   data_config:
     data_dir: ${private.data_dir} 
     sample_bin: SB1
-    patch_name: gaiascan_l146.2_b51.88_ra163.95_dec59.71
+    patch_name: patch_l146.25_b51.88
     feature_list:
       - latitudes
       - longitudes
@@ -78,7 +78,7 @@ export_SB2:
   data_config:
     data_dir: ${private.data_dir} 
     sample_bin: SB2
-    patch_name: gaiascan_l146.2_b51.88_ra163.95_dec59.71
+    patch_name: patch_l146.25_b51.88
     feature_list:
       - latitudes
       - longitudes
@@ -103,7 +103,7 @@ export_latent_all:
 
   data_config:
     data_dir: ${private.data_dir} 
-    patch_name: gaiascan_l146.2_b51.88_ra163.95_dec59.71
+    patch_name: patch_l146.25_b51.88
     feature_list:
       - latitudes
       - longitudes
