@@ -184,7 +184,11 @@ def do_mass_sculpting(masses, scores, true_labels, save_path, rej_cuts = [0.5, 0
     plt.xlabel('mass')
     plt.ylabel('counts')
     
-    colormap = cm.get_cmap('jet', len(rej_cuts)+2)
+    try:
+        colormap = cm.get_cmap('jet', len(rej_cuts)+2)
+    except:
+        colormap = plt.get_cmap('jet', len(rej_cuts)+2)
+
     for i, rej_cut in enumerate(rej_cuts):
         cut_index = -int(len(sorted_scores) * rej_cut)
         plt.hist(sorted_masses[:cut_index], bins=bins, label=f"rejection {rej_cut}", color=colormap(i+1), histtype='step', density=density)

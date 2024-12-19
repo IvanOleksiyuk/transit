@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - override /step_train_template/model: TRANSITvSKYv5.yaml
+  - override /step_train_template/model: TRANSITvSKYv6.yaml
 
 step_train_template:
   model:

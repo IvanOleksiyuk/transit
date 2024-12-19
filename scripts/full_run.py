@@ -69,7 +69,7 @@ def write_git_status_to_file(file_path):
         print(f"Error writing to file: {str(e)}")
 
 @hydra.main(
-    version_base=None, config_path=str('../config'), config_name="TRANSITvSKYv6_SKY"
+    version_base=None, config_path=str('../config'), config_name="TRANSITv0v1_LHCO_test_trXex_sky"
 )
 def main(cfg: DictConfig) -> None:
     log.info("<<<START FULL RUN>>>")
@@ -93,7 +93,6 @@ def main(cfg: DictConfig) -> None:
     
     # Save git hash to a file
     git_hash_file = summary_dir / "git_hash.txt"
-    git_hash=get_git_hash()
     write_git_status_to_file(git_hash_file)
     
     os.makedirs(run_dir, exist_ok=True)
