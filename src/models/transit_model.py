@@ -1111,9 +1111,8 @@ class TRANSIT(LightningModule):
             sample = sample.reshape(-1, sample.shape[-1])
             result = {var_name: column.reshape(-1, 1) for var_name, column in zip(self.var_group_list[0], sample.T)}
             result.update({var_name: column.reshape(-1, 1) for var_name, column in zip(self.var_group_list[1], context.T)})                
-            return result
         else:
             sample = self.generate(batch)
             result = sample
-            return result
+        return result
 

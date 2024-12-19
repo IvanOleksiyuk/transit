@@ -26,10 +26,9 @@ do_train_template: True
 do_export_template: True
 verbose_validation: False
 
-check_hash:
+check_close:
   run_dir: ${general.run_dir}
-  generated_template_approx: 25da718c698f435507efe1af40c80b5c856b6f72edcec51ebd9deefd44196535
-  generated_template_full: 4e199acd46329f46c320605b4bd4e7fd74e36f242402124bf5f8e84944f645aa #gpu023
+  generated_template_approx: "/home/users/o/oleksiyu/WORK/skycurtains/transit/tests/references/gen_trXex.csv"
 
 general:
   name: TRANSITv0v1_LHCO_test_trXex

@@ -78,8 +78,6 @@ def main(cfg):
     target_data = hydra.utils.instantiate(cfg.step_evaluate.target_data).data["data"]
     log.info("Loading template data")
     template_data = pd.read_hdf(cfg.step_evaluate.template_file)
-
-
     
     variables = original_data.columns.tolist()
     print(len(target_data.to_numpy()))

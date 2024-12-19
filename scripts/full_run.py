@@ -26,7 +26,7 @@ import transit.scripts.cwola_evaluation as cwola_evaluation
 import transit.scripts.plot_compare as plot_compare
 import transit.scripts.export_latent_space as export_latent_space
 import transit.scripts.time_chart as time_chart
-import transit.scripts.check_hash as check_hash
+import transit.scripts.check_close as check_close
 from datetime import datetime
 import subprocess
 log = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ def write_git_status_to_file(file_path):
         print(f"Error writing to file: {str(e)}")
 
 @hydra.main(
-    version_base=None, config_path=str('../config'), config_name="TRANSITv0v1_LHCO_test_trXex_sky"
+    version_base=None, config_path=str('../config'), config_name="TRANSITv0v1_LHCO_test_trXex"
 )
 def main(cfg: DictConfig) -> None:
     log.info("<<<START FULL RUN>>>")
@@ -212,11 +212,11 @@ def main(cfg: DictConfig) -> None:
     
     log.info("<<<END FULL RUN>>>")
 
-    if hasattr(cfg, "check_hash"):
+    if hasattr(cfg, "check_close"):
         start_time = datetime.now()
         #log.info("===================================")
         #log.info("Check the hash of the output files")
-        check_hash.main(cfg.check_hash)
+        check_close.main(cfg.check_close)
         #log.info(f"Finish: Check the hash of the output files. Time taken: {datetime.now() - start_time}")
         #log.info("===================================")
         with open(rutime_file, 'a') as file:

@@ -1,7 +1,7 @@
 # @package _global_
 
-# defaults:
-#   - override /step_train_template/trainer: 1e_noclip.yaml
+#defaults:
+#  - override /step_train_template/model: TRANSITv25f_test.yaml
 
 path:
   data_dir: /home/users/o/oleksiyu/DATA/small/

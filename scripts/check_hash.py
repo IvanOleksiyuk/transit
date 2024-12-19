@@ -9,7 +9,7 @@ def hash_dataframe_from_h5(file_path, approximate=True):
     
     # Serialize the DataFrame to a string for hashing
     if approximate:
-        df_string = df.head().astype(np.float16).to_csv(index=False)  # You can also use to_json, to_string, etc.
+        df_string = df.head().to_csv(index=False)  # You can also use to_json, to_string, etc.
         print(df_string)
     else:
         df_string = df.astype(np.float16).to_csv(index=False)
