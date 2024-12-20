@@ -9,5 +9,3 @@ step_train_template:
     input_type: sky_train
     add_standardizing_layer: True
   do_scale_epochs: True
-  trainer:
-    max_epochs: 1

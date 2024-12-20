@@ -104,7 +104,7 @@ def main(cfg):
     variables = data["original_data"].columns.tolist()
 
     # Plot the contour plot for the generated template on SR
-    if getattr(cfg.step_evaluate.procedures, "plot_contour_SR", True):
+    if getattr(cfg.step_evaluate, "plot_contour_SR", True):
         if cfg.step_evaluate.debug_eval:
             plot_mode="diagnose"
         else:
@@ -122,7 +122,7 @@ def main(cfg):
             save_name="SB2nSB1_to_SR")
         print("contour plot is done")
         
-    if getattr(cfg.step_evaluate.procedures, "plot_contour_SB1toSB2transport", False):
+    if getattr(cfg.step_evaluate, "plot_contour_SB1toSB2transport", False):
         if check_data_loaded(["original_SB1_data", "SB1_gen_file", "original_SB2_data"], data)!=[]:
             print("Missing data: ", check_data_loaded(["original_SB1_data", "SB1_gen_file", "original_SB2_data"], data))
         else:
@@ -149,7 +149,7 @@ def main(cfg):
                 tag = ["SB1", "SB2"],
                 save_name="SB1_to_SB2")
     
-    if getattr(cfg.step_evaluate.procedures, "plot_classifier_SB1toSB2transport", False):
+    if getattr(cfg.step_evaluate, "plot_classifier_SB1toSB2transport", False):
         SB1_data = data["original_SB1_data"].to_numpy()[:, :-1]
         SB2_data = data["original_SB2_data"].to_numpy()[:, :-1]
         SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
@@ -175,7 +175,7 @@ def main(cfg):
         print(auc_score)
         wandb.log({"evaluation/sb2to1_AUC": auc_score})
 
-    if getattr(cfg.step_evaluate.procedures, "plot_everything_else", True):
+    if getattr(cfg.step_evaluate, "plot_everything_else", True):
         evaluate_model(cfg, data["original_data"], data["target_data"], data["template_file"])
 
 
