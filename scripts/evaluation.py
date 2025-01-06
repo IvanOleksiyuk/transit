@@ -28,7 +28,6 @@ from transit.src.utils.hsic import HSIC_np, HSIC_torch
 log = logging.getLogger(__name__)
 from sklearn.model_selection import train_test_split
 import copy
-from src.model.denseclassifier import run_classifier_folds
 import wandb
 
 def to_np(inpt: Union[torch.Tensor, tuple]) -> np.ndarray:
@@ -150,6 +149,8 @@ def main(cfg):
                 save_name="SB1_to_SB2")
     
     if getattr(cfg.step_evaluate, "plot_classifier_SB1toSB2transport", False):
+        from src.model.denseclassifier import run_classifier_folds
+        
         SB1_data = data["original_SB1_data"].to_numpy()[:, :-1]
         SB2_data = data["original_SB2_data"].to_numpy()[:, :-1]
         SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
