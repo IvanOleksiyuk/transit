@@ -69,7 +69,7 @@ def get_curve(method, curve_type, prefix="", postfix="", ignore_missing=False):
         if ignore_missing:
             return [np.array([]), np.array([]), np.array([])]
         print("No files found for "+prefix+curve_type+postfix+".npy")
-        assert False, "No files found for "+prefix+curve_type+postfix+".npy"
+        assert False, "No files found for "+prefix+curve_type+postfix+".npy"+" in "+method
     curves = []
     for file in files:
         curves.append(np.load(file))

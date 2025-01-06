@@ -69,7 +69,7 @@ def write_git_status_to_file(file_path):
         print(f"Error writing to file: {str(e)}")
 
 @hydra.main(
-    version_base=None, config_path=str('../config'), config_name="TRANSITv0v1_LHCO_test_trXex_local"
+    version_base=None, config_path=str('../config'), config_name="TRANSITv0v1_LHCO"
 )
 def main(cfg: DictConfig) -> None:
     log.info("<<<START FULL RUN>>>")

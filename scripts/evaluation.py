@@ -12,7 +12,7 @@ from transit.src.utils.hydra_utils import instantiate_collection, log_hyperparam
 
 import pandas as pd
 import transit.src.utils.plotting as pltt
-
+from sklearn.metrics import auc, roc_curve
 import matplotlib.pyplot as plt
 import numpy as np
 from transit.src.data.lhco_simple import LHCOInMemoryDataset
@@ -25,6 +25,7 @@ import pickle
 import dcor
 from transit.src.models.distance_correlation import DistanceCorrelation
 from transit.src.utils.hsic import HSIC_np, HSIC_torch
+from transit.srccwola.classifier import run_bdt_folds
 log = logging.getLogger(__name__)
 from sklearn.model_selection import train_test_split
 import copy
@@ -98,6 +99,9 @@ def main(cfg):
                 data[key] = pd.DataFrame(data[key].test_dataset[:][0], columns=data[key].get_features_all())
             if cfg.step_evaluate.data[key]["_target_"]=="transit.src.data.data.InMemoryDataFrameDict":
                 data[key] = data[key].data["data"]
+            if cfg.step_evaluate.data[key]["_target_"]=="transit.src.data.data.SimpleDataModule":
+                data[key].setup(stage="test")
+                data[key] = pd.concat([data[key].test_data.data["data"], data[key].test_data.data["mass_paired"]], axis=1)
             print(f"Loaded data {key} with n={len(data[key])}, and vars {data[key].columns.tolist()}")
     	
     variables = data["original_data"].columns.tolist()
@@ -121,7 +125,7 @@ def main(cfg):
             save_name="SB2nSB1_to_SR")
         print("contour plot is done")
         
-    if getattr(cfg.step_evaluate, "plot_contour_SB1toSB2transport", False):
+    if getattr(cfg.step_evaluate, "plot_contour_SB1toSB2transport", True):
         if check_data_loaded(["original_SB1_data", "SB1_gen_file", "original_SB2_data"], data)!=[]:
             print("Missing data: ", check_data_loaded(["original_SB1_data", "SB1_gen_file", "original_SB2_data"], data))
         else:
@@ -156,8 +160,8 @@ def main(cfg):
         SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
         SB2_gen = data["SB2_gen_file"].to_numpy()[:, :-1]
         auc_score, threshold, data_preds = run_classifier_folds(
-            true_samples=SB2_data, 
-            template_samples=SB2_gen,
+            SB2_data, 
+            SB2_gen,
             save_dir=Path(cfg.general.run_dir),
             tag=f"sb1to2",
             return_threshold=False,  # if key == "sb12r" else False,
@@ -166,8 +170,8 @@ def main(cfg):
         wandb.log({"evaluation/sb1to2_AUC": auc_score})
         
         auc_score, threshold, data_preds = run_classifier_folds(
-            true_samples=SB1_data, 
-            template_samples=SB1_gen,
+            SB1_data, 
+            SB1_gen,
             save_dir=Path(cfg.general.run_dir),
             tag=f"sb2to1",
             return_threshold=False,  # if key == "sb12r" else False,
@@ -175,6 +179,37 @@ def main(cfg):
         data["SB1_gen_file"]
         print(auc_score)
         wandb.log({"evaluation/sb2to1_AUC": auc_score})
+
+    # if getattr(cfg.step_evaluate, "plot_BDT_SB1toSB2transport", True):
+        
+    #     SB1_data = data["original_SB1_data"].to_numpy()[:, :-1]
+    #     SB2_data = data["original_SB2_data"].to_numpy()[:, :-1]
+    #     SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
+    #     SB2_gen = data["SB2_gen_file"].to_numpy()[:, :-1]
+    #     inputs, labels, outputs, extra_preds_sig, extra_preds_bkg, extra_preds_dict, extra_bkg_preds_dict = run_bdt_folds(
+    #         true_samples=SB2_data, 
+    #         template_samples=SB2_gen,
+    #         save_dir=Path(cfg.general.run_dir),
+    #         tag=f"sb1to2",
+    #         return_threshold=False,  # if key == "sb12r" else False,
+    #     )
+    #     fpr, tpr, _ = roc_curve(labels, outputs)
+    #     auc_score = auc(fpr, tpr)
+    #     print(auc_score)
+    #     wandb.log({"evaluation/sb1to2_AUC": auc_score})
+        
+    #     inputs, labels, outputs, extra_preds_sig, extra_preds_bkg, extra_preds_dict, extra_bkg_preds_dict = run_bdt_folds(
+    #         true_samples=SB1_data, 
+    #         template_samples=SB1_gen,
+    #         save_dir=Path(cfg.general.run_dir),
+    #         tag=f"sb2to1",
+    #         return_threshold=False,  # if key == "sb12r" else False,
+    #     )
+    #     fpr, tpr, _ = roc_curve(labels, outputs)
+    #     auc_score = auc(fpr, tpr)
+    #     data["SB1_gen_file"]
+    #     print(auc_score)
+    #     wandb.log({"evaluation/sb2to1_AUC": auc_score})
 
     if getattr(cfg.step_evaluate, "plot_everything_else", True):
         evaluate_model(cfg, data["original_data"], data["target_data"], data["template_file"])
