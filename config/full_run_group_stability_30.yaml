@@ -3,9 +3,10 @@ run_dir: groups/transit_reco_cons0.01_smls0.001_adv3_LHCO_CURTAINS2048b/
 # Change the seed for the template training
 several_template_train_seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
 redo: False
-run_sequentially: True # Run the experiments sequentially
+run_sequentially: False # Run the experiments sequentially
 do_stability_analysis: True
 not_just_seeds: False
+one_run_sh: /home/users/o/oleksiyu/WORK/hyperproject/transit/jobs/PAPER/TRANSITv0v1_LHCO_one_run.sh
 
 stability_analysis_cfg:
   run_dir: null
