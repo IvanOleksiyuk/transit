@@ -69,7 +69,7 @@ def write_git_status_to_file(file_path):
         print(f"Error writing to file: {str(e)}")
 
 @hydra.main(
-    version_base=None, config_path=str('../config'), config_name="TRANSITv0v1_LHCO"
+    version_base=None, config_path=str('../config'), config_name="TRANSITv0v1_LHCO_test"
 )
 def main(cfg: DictConfig) -> None:
     log.info("<<<START FULL RUN>>>")
@@ -220,6 +220,11 @@ def main(cfg: DictConfig) -> None:
         #log.info("===================================")
         with open(rutime_file, 'a') as file:
             file.write('Check hash: {}\n'.format(datetime.now() - start_time))
+
+    done_file_path = run_dir/"ALL.DONE"
+    with open(done_file_path, "w") as f:
+        f.write("All done for this run!")
+        f.close()
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ verbose_validation: False
 
 check_close:
   run_dir: ${general.run_dir}
-  generated_template_approx: "/home/users/o/oleksiyu/WORK/skycurtains/transit/tests/references/gen_trXex.csv"
+  generated_template_approx: "/home/users/o/oleksiyu/WORK/hyperproject/transit/tests/references/gen_trXex.csv"
 
 general:
   name: TRANSITv0v1_LHCO_test_trXex

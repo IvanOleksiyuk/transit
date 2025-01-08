@@ -23,8 +23,51 @@ import transit.scripts.evaluation as evaluation
 import transit.scripts.full_run as full_run
 import copy
 import transit.scripts.plot_compare as plot_compare
+import matplotlib.pyplot as plt
+import sys
+import subprocess
 log = logging.getLogger(__name__)
 
+def modify_copy_and_submit(path1, path2):
+    # Ensure the provided paths exist
+    if not os.path.isfile(path1):
+        print(f"Error: File '{path1}' does not exist.")
+        sys.exit(1)
+    if not os.path.isdir(path2):
+        print(f"Error: Directory '{path2}' does not exist.")
+        sys.exit(1)
+    
+    # Extract the filename of the .sh file
+    sh_filename = os.path.basename(path1)
+    
+    # Construct the path to the new .sh file in the path2 directory
+    new_sh_path = os.path.join(path2, sh_filename)
+    
+    # Copy the original .sh file to the new location
+    shutil.copy(path1, new_sh_path)
+    
+    # Read the content of the copied .sh file
+    with open(new_sh_path, 'r') as file:
+        content = file.read()
+    
+    # Replace the configuration name with full_config.yaml
+    updated_content = content.replace(
+        "--config-name TRANSITv0v2_LHCO", 
+        f"--config-path {path2} --config-name full_config.yaml"
+    )
+    
+    updated_content = updated_content.replace(
+        "# SAVE SCONTROL PLACEHOLDER", 
+        f"echo \"Running on node: $SLURMD_NODENAME\" > {path2}/node_info.txt"
+    )
+    
+    # Write the updated content back to the new .sh file
+    with open(new_sh_path, 'w') as file:
+        file.write(updated_content)
+    
+    print(f"Modified script has been copied to: {new_sh_path}")
+    print(f"Updated to use full_config.yaml located in: {path2}")
+    
 def expand_template_train_seed(config_list, several_template_train_seeds, not_just_seeds=False):
     new_config_list = []
     if several_template_train_seeds is None:
@@ -169,7 +212,7 @@ def replace_specific_name_in_cfg(cfg, search_name, insert_value, check_value=Non
 
 # TODO pyroot utils will remove the need for ../configs
 @hydra.main(
-    version_base=None, config_path=str('../config'), config_name="full_run_group_dopings_3seeds.yaml"
+    version_base=None, config_path=str('../config'), config_name="full_run_group_stability_30.yaml"
 )
 def main(cfg: DictConfig) -> None:
     log.info("<<<START FULL RUN>>>")
@@ -209,10 +252,17 @@ def main(cfg: DictConfig) -> None:
                 print("already done " + done_file_path)
             else:
                 delete_folder_if_exists(run_cfg.general.run_dir+"/template")
-                full_run.main(run_cfg)
-                with open(done_file_path, "w") as f:
-                    f.write("All done for this run!")
-                    f.close()
+                full_run.main(copy.deepcopy(run_cfg))
+            plt.close("all")
+    else:
+        print("Running in parallel jobs")
+        for i, run_cfg in enumerate(config_list):
+            done_file_path = run_cfg.general.run_dir+"/ALL.DONE"
+            if os.path.isfile(done_file_path) and not cfg.redo:
+                print("already done " + done_file_path)
+            else:
+                #delete_folder_if_exists(run_cfg.general.run_dir+"/template")
+                modify_copy_and_submit(cfg.one_run_sh, os.path.abspath(run_cfg.general.run_dir))
     
     if cfg.do_stability_analysis:
         log.info("Stability analysis")

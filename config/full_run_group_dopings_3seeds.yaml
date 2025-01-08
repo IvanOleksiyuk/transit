@@ -7,9 +7,10 @@ several_template_train_seeds: [1, 2, 3]
 several_doping: [50, 100, 333, 500, 667, 1000, 3000]
 check_doping: 3000 #a value from the original config file to replace
 redo: False
-run_sequentially: True # Run the experiments sequentially
+run_sequentially: False # Run the experiments sequentially
 do_stability_analysis: True
 not_just_seeds: True
+one_run_sh: /home/users/o/oleksiyu/WORK/hyperproject/transit/jobs/PAPER/TRANSITv0v1_LHCO_one_run.sh
 
 stability_analysis_cfg:
   run_dir: null

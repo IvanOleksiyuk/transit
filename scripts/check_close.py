@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import os
 
-def hash_dataframe_from_h5(file_path, compare_csv, tolerance=1e-5):
+def check_close_dataframe_from_h5(file_path, compare_csv, tolerance=1e-5):
     # Load the DataFrame from the HDF5 file
     df = pd.read_hdf(file_path)
     if not os.path.exists(compare_csv):
@@ -40,5 +40,5 @@ def hash_dataframe_from_h5(file_path, compare_csv, tolerance=1e-5):
 def main(cfg):
     ref_name="generated_template_approx"
     if cfg.get(ref_name, False):
-        hash = hash_dataframe_from_h5(Path(cfg.get("run_dir"))/"template/outputs/template_sample.h5", cfg.get(ref_name))
+        hash = check_close_dataframe_from_h5(Path(cfg.get("run_dir"))/"template/outputs/template_sample.h5", cfg.get(ref_name))
 
