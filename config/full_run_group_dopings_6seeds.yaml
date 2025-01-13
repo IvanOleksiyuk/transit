@@ -10,7 +10,7 @@ redo: False
 run_sequentially: False # Run the experiments sequentially
 do_stability_analysis: True
 not_just_seeds: True
-one_run_sh: /home/users/o/oleksiyu/WORK/hyperproject/transit/jobs/PAPER/TRANSITv0v1_LHCO_one_run.sh
+one_run_sh: /home/users/o/oleksiyu/WORK/hyperproject/transit/jobs/PAPER/TRANSITv0v2_LHCO_one_run.sh
 
 stability_analysis_cfg:
   run_dir: null

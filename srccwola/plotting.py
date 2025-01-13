@@ -33,7 +33,7 @@ def plot_closure(
 
 
 def plot_svb(
-    inputs: np.ndarray, outputs: np.ndarray, extra_preds: np.ndarray, output_path: Path
+    inputs: np.ndarray, outputs: np.ndarray, extra_preds_sig: np.ndarray, output_path: Path
 ) -> None:
     """Plot a ROC comparing the signal vs background predictions."""
     # Get the combined outputs
@@ -42,8 +42,10 @@ def plot_svb(
     labs = inputs[:, -1][real_mask]
 
     # Also include the extra predictions
-    outs = np.hstack((outs, extra_preds))
-    labs = np.hstack((labs, np.ones(len(extra_preds))))
+    if extra_preds_sig is not None:
+        outs = np.hstack((outs, extra_preds_sig))
+    if extra_preds_sig is not None:
+        labs = np.hstack((labs, np.ones(len(extra_preds_sig))))
 
     # Get the AUC
     fpr, tpr, _ = roc_curve(labs, outs)

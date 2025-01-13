@@ -29,13 +29,15 @@ def main(cfg: DictConfig) -> None:
     template.write_npy_single(file_path_str=cfg.cwola_path+cfg.cwola_subfolders+"template.npy", key="template")
 
     extra_signal = hydra.utils.instantiate(cfg.datasets.extra_signal)
-    print("extra_signal len:", len(extra_signal))
-    extra_signal.write_npy_single(file_path_str=cfg.cwola_path+cfg.cwola_subfolders+"extra_signal.npy", key="data")
+    if extra_signal is not None:
+        print("extra_signal len:", len(extra_signal))
+        extra_signal.write_npy_single(file_path_str=cfg.cwola_path+cfg.cwola_subfolders+"extra_signal.npy", key="data")
     
     extra_bkg = hydra.utils.instantiate(cfg.datasets.extra_bkg)
-    print("extra_signal len:", len(extra_bkg))
-    extra_bkg.write_npy_single(file_path_str=cfg.cwola_path+cfg.cwola_subfolders+"extra_bkg.npy", key="data")
-    
+    if extra_bkg is not None:
+        print("extra_signal len:", len(extra_bkg))
+        extra_bkg.write_npy_single(file_path_str=cfg.cwola_path+cfg.cwola_subfolders+"extra_bkg.npy", key="data")
+        
     for seed in cfg.seeds:
         #python libs_snap/linearanomaly/cwola.py --input_path=workspaces/dev/transit_DisCo_LHCO_CWOLA/cwola/ --mode=standard --num_signal=3000 --sideband_1=3100_3300 --sideband_2=3700_3900 --num_folds=5 --max_iter=250 --early_stopping=True --validation_fraction=0.1 --class_weight=balanced --num_ensemble=5 --seed=0
         #python libs_snap/linearanomaly/cwola.py --input_path=/home/users/o/oleksiyu/WORK/hyperproject/workspaces/adv1_gauss_corr_4_gap_transit_usem_addgapmass/transit_reco_cons0.01_smls0.001_adv3_LHCO_CURTAINS1024b/cwola/ --mode=standard --num_signal=3000 --sideband_1=3100_3300 --sideband_2=3700_3900 --num_folds=5 --max_iter=250 --early_stopping=1 --validation_fraction=0.1 --class_weight=balanced --num_ensemble=5 --seed=0
@@ -62,13 +64,22 @@ def main(cfg: DictConfig) -> None:
             "--sideband_2=" + str(cfg.sideband_2),
             "--num_folds=" + str(cfg.num_folds),
             "--max_iter=" + str(cfg.max_iter),
-            "--extra_bkg=" + str(cfg.extra_bkg),
             #"--early_stopping=" + str(cfg.early_stopping),
             "--validation_fraction=" + str(cfg.validation_fraction),
             "--class_weight=" + str(cfg.class_weight),
             "--num_ensemble=" + str(cfg.num_ensemble),
             "--seed=" + str(seed),
             ]
+        
+        if cfg.get("extra_bkg", None) is not None:
+            command.append("--extra_bkg=" + str(cfg.extra_bkg))
+        else:
+            command.append("--extra_bkg=1")
+
+        if cfg.get("extra_signal", None) is not None:
+            command.append("--extra_signal=" + str(cfg.extra_signal))
+        else:
+            command.append("--extra_signal=1")
 
         print(" ".join(command))
         # run cwola

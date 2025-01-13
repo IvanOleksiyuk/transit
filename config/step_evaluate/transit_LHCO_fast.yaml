@@ -5,11 +5,11 @@ data:
   template_file:  ${general.run_dir}/template/outputs/template_sample.h5
   SB1_gen_file: ${general.run_dir}/template/outputs/SB1_gen_sample.h5
   SB2_gen_file: ${general.run_dir}/template/outputs/SB2_gen_sample.h5
-  original_SB1_data: ${data.export_SB1}
-  original_SB2_data: ${data.export_SB2}
-debug_eval: False
+  original_SB1_data: ${data.export_SB2}
+  original_SB2_data: ${data.export_SB1}
+debug_eval: True
 get_best: False
-do_2d_hist_instead_of_contour: True
+do_2d_hist_instead_of_contour: False
 x_bounds: [-3, 3]
 
 procedures: 

@@ -15,6 +15,22 @@ from matplotlib.colors import LinearSegmentedColormap
 colors = [(1, 1, 1, 0), (1, 0, 0, 1)]  # (R, G, B, Alpha) - from transparent to red
 custom_reds = LinearSegmentedColormap.from_list("custom_reds", colors)
 
+def nice_label(label):
+    if label == "m_j1":
+        return "$m_{j1}$"
+    elif label == "del_m":
+        return "$\Delta m$"
+    elif label == "del_R":
+        return "$\Delta R$"
+    elif label == "tau21_j1":
+        return "$\\tau_{21}^{j1}$"
+    elif label == "tau21_j2":
+        return "$\\tau_{21}^{j2}$"
+    elif label == "m_jj":
+        return "$m_{jj}$"
+    else:
+        return label
+
 def shuffle_tensor(data):
     mx = torch.randperm(len(data), device=torch.device('cpu'))
     return data[mx]
@@ -265,7 +281,7 @@ def plot_feature_spread(
         if plot_mode == "diagnose":
             n_sample = 1000
         else:
-            n_sample = 40_000
+            n_sample = 16000
         if feature_nms is None:
             feature_nms = [f"feature_{i}" for i in range(n_features)]
         if tag is None:
@@ -283,7 +299,7 @@ def plot_feature_spread(
 
         for i in range(n_features):
             if i != 0:
-                axes[i, 0].set_ylabel(feature_nms[i])
+                axes[i, 0].set_ylabel(nice_label(feature_nms[i]))
             else:
                 axes[0, 0].set_ylabel(
                     "Normalised Entries", horizontalalignment="right", y=1.0
@@ -291,7 +307,7 @@ def plot_feature_spread(
             for j in range(n_features):
                 if j != 0:
                     axes[i, j].set_yticklabels([])
-                axes[-1, j].set_xlabel(feature_nms[j])
+                axes[-1, j].set_xlabel(nice_label(feature_nms[j]))
                 if i != n_features - 1:
                     axes[i, j].tick_params(
                         axis="x", which="both", direction="in", labelbottom=False

@@ -4,6 +4,7 @@ root = pyrootutils.setup_root(search_from=__file__, pythonpath=True, cwd=True, i
 from typing import Union
 import logging
 import hydra
+import time
 from hydra.core.global_hydra import GlobalHydra
 
 from pathlib import Path
@@ -12,24 +13,21 @@ from transit.src.utils.hydra_utils import instantiate_collection, log_hyperparam
 
 import pandas as pd
 import transit.src.utils.plotting as pltt
-from sklearn.metrics import auc, roc_curve
 import matplotlib.pyplot as plt
 import numpy as np
-from transit.src.data.lhco_simple import LHCOInMemoryDataset
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from omegaconf import DictConfig, OmegaConf
 import torch
-from torch.nn.functional import normalize, mse_loss, cosine_similarity
 from scipy.stats import pearsonr, spearmanr, kendalltau
 import pickle
 import dcor
 from transit.src.models.distance_correlation import DistanceCorrelation
 from transit.src.utils.hsic import HSIC_np, HSIC_torch
-from transit.srccwola.classifier import run_bdt_folds
-log = logging.getLogger(__name__)
 from sklearn.model_selection import train_test_split
 import copy
 import wandb
+
+log = logging.getLogger(__name__)
 
 def to_np(inpt: Union[torch.Tensor, tuple]) -> np.ndarray:
     """More consicse way of doing all the necc steps to convert a pytorch
@@ -91,7 +89,7 @@ def main(cfg):
     for key in cfg.step_evaluate.data:
         if "file" in key:
             data[key] = pd.read_hdf(cfg.step_evaluate.data[key])
-            print(f"Loaded data {key} with n={len(data[key])}, and vars {data[key].columns.tolist()}")
+            log.info(f"Loaded data {key} with n={len(data[key])}, and vars {data[key].columns.tolist()}")
         else:
             data[key] = hydra.utils.instantiate(cfg.step_evaluate.data[key])
             if cfg.step_evaluate.data[key]["_target_"]=="src.data.gdr3_dataclasses.GDR3DataModuleTop":
@@ -102,8 +100,9 @@ def main(cfg):
             if cfg.step_evaluate.data[key]["_target_"]=="transit.src.data.data.SimpleDataModule":
                 data[key].setup(stage="test")
                 data[key] = pd.concat([data[key].test_data.data["data"], data[key].test_data.data["mass_paired"]], axis=1)
-            print(f"Loaded data {key} with n={len(data[key])}, and vars {data[key].columns.tolist()}")
-    	
+            log.info(f"Loaded data {key} with n={len(data[key])}, and vars {data[key].columns.tolist()}")    
+    log.info("Data loaded")
+    
     variables = data["original_data"].columns.tolist()
 
     # Plot the contour plot for the generated template on SR
@@ -112,6 +111,8 @@ def main(cfg):
             plot_mode="diagnose"
         else:
             plot_mode=""
+        log.info("Starting contour plot "+plot_mode)
+        time_start = time.time()
         pltt.plot_feature_spread(
             data["target_data"][variables].to_numpy(),
             data["template_file"][variables].to_numpy(),
@@ -123,7 +124,7 @@ def main(cfg):
             x_bounds=cfg.step_evaluate.x_bounds or None,
             tag = ["SB1, SB2", "SR"],
             save_name="SB2nSB1_to_SR")
-        print("contour plot is done")
+        log.info("contour plot is done, in "+str(time.time()-time_start)+" seconds")
         
     if getattr(cfg.step_evaluate, "plot_contour_SB1toSB2transport", True):
         if check_data_loaded(["original_SB1_data", "SB1_gen_file", "original_SB2_data"], data)!=[]:
@@ -152,7 +153,7 @@ def main(cfg):
                 tag = ["SB1", "SB2"],
                 save_name="SB1_to_SB2")
     
-    if getattr(cfg.step_evaluate, "plot_classifier_SB1toSB2transport", False):
+    if getattr(cfg.step_evaluate, "plot_SKYclassifier_SB1toSB2transport", False):
         from src.model.denseclassifier import run_classifier_folds
         
         SB1_data = data["original_SB1_data"].to_numpy()[:, :-1]
@@ -179,37 +180,6 @@ def main(cfg):
         data["SB1_gen_file"]
         print(auc_score)
         wandb.log({"evaluation/sb2to1_AUC": auc_score})
-
-    # if getattr(cfg.step_evaluate, "plot_BDT_SB1toSB2transport", True):
-        
-    #     SB1_data = data["original_SB1_data"].to_numpy()[:, :-1]
-    #     SB2_data = data["original_SB2_data"].to_numpy()[:, :-1]
-    #     SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
-    #     SB2_gen = data["SB2_gen_file"].to_numpy()[:, :-1]
-    #     inputs, labels, outputs, extra_preds_sig, extra_preds_bkg, extra_preds_dict, extra_bkg_preds_dict = run_bdt_folds(
-    #         true_samples=SB2_data, 
-    #         template_samples=SB2_gen,
-    #         save_dir=Path(cfg.general.run_dir),
-    #         tag=f"sb1to2",
-    #         return_threshold=False,  # if key == "sb12r" else False,
-    #     )
-    #     fpr, tpr, _ = roc_curve(labels, outputs)
-    #     auc_score = auc(fpr, tpr)
-    #     print(auc_score)
-    #     wandb.log({"evaluation/sb1to2_AUC": auc_score})
-        
-    #     inputs, labels, outputs, extra_preds_sig, extra_preds_bkg, extra_preds_dict, extra_bkg_preds_dict = run_bdt_folds(
-    #         true_samples=SB1_data, 
-    #         template_samples=SB1_gen,
-    #         save_dir=Path(cfg.general.run_dir),
-    #         tag=f"sb2to1",
-    #         return_threshold=False,  # if key == "sb12r" else False,
-    #     )
-    #     fpr, tpr, _ = roc_curve(labels, outputs)
-    #     auc_score = auc(fpr, tpr)
-    #     data["SB1_gen_file"]
-    #     print(auc_score)
-    #     wandb.log({"evaluation/sb2to1_AUC": auc_score})
 
     if getattr(cfg.step_evaluate, "plot_everything_else", True):
         evaluate_model(cfg, data["original_data"], data["target_data"], data["template_file"])

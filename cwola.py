@@ -70,6 +70,12 @@ def get_args():
         help="Whether to use early stopping",
     )
     parser.add_argument(
+        "--extra_signal",
+        type=lambda x: bool(int(x)),
+        default=True,
+        help="Whether to use early stopping",
+    )
+    parser.add_argument(
         "--validation_fraction",
         type=float,
         default=0.1,
@@ -137,9 +143,14 @@ def main():
     print("[--] Loading data")
     data = np.load(args.input_path / "sr.npy")
     template = np.load(args.input_path / "template.npy")
-    extra_signal = np.load(args.input_path / "extra_signal.npy")
-    
-    extra_bkg = np.load(args.input_path / "extra_bkg.npy")
+    if args.extra_signal:
+        extra_signal = np.load(args.input_path / "extra_signal.npy")
+    else:
+        extra_signal = None
+    if args.extra_bkg:
+        extra_bkg = np.load(args.input_path / "extra_bkg.npy")
+    else:
+        extra_bkg = None
     features = np.loadtxt(args.input_path / "features.txt", dtype=str)
 
     print(f"[--] Setting datasets for CWoLa using mode {args.mode}")
@@ -178,28 +189,34 @@ def main():
         key="df",
         mode="w",
     )
-    extra_sig_df = pd.DataFrame(
-        np.hstack((extra_signal, extra_preds_sig[:, None])),
-        columns=[*features, "preds"],
-    )
-    for key, preds in extra_preds_dict.items():
-        extra_sig_df[key] = preds
-    extra_sig_df.to_hdf(
-        args.output_path / "cwola_outputs_extra_sig.h5",
-        key="df",
-        mode="w",
-    )
-    extra_bkg_df = pd.DataFrame(
-        np.hstack((extra_bkg, extra_preds_bkg[:, None])),
-        columns=[*features, "preds"],
-    )
-    for key, preds in extra_bkg_preds_dict.items():
-        extra_bkg_df[key] = preds
-    extra_bkg_df.to_hdf(
-        args.output_path / "cwola_outputs_extra_bkg.h5",
-        key="df",
-        mode="w",
-    )
+    
+    # Evaluate predictios for extra signal
+    if args.extra_signal:
+        extra_sig_df = pd.DataFrame(
+            np.hstack((extra_signal, extra_preds_sig[:, None])),
+            columns=[*features, "preds"],
+        )
+        for key, preds in extra_preds_dict.items():
+            extra_sig_df[key] = preds
+        extra_sig_df.to_hdf(
+            args.output_path / "cwola_outputs_extra_sig.h5",
+            key="df",
+            mode="w",
+        )
+    
+    # Evaluate predictions for extra background
+    if args.extra_bkg:
+        extra_bkg_df = pd.DataFrame(
+            np.hstack((extra_bkg, extra_preds_bkg[:, None])),
+            columns=[*features, "preds"],
+        )
+        for key, preds in extra_bkg_preds_dict.items():
+            extra_bkg_df[key] = preds
+        extra_bkg_df.to_hdf(
+            args.output_path / "cwola_outputs_extra_bkg.h5",
+            key="df",
+            mode="w",
+        )
     with open(args.input_path/"cwola_time.txt", "w") as f:
         f.write(str(cwola_time))
         
