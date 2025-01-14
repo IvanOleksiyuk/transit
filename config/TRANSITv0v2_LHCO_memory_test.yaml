@@ -1,0 +1,43 @@
+# @package _global_
+
+defaults:
+  - _self_
+  - path: user
+  - data: LHCO_DEFAULT_speed
+  - step_train_template: transit_reco_adv
+  - step_export_template: transit_LHCO
+  - step_export_SB1: transit_LHCO
+  - step_export_SB2: transit_LHCO
+  - step_evaluate: transit_LHCO_fast
+  - step_cwola: BDT_LHCO_allCWOLA_SBcheck
+  - step_export_latent: transit_LHCO
+  - step_plot_compare: transit_LHCO
+  - override step_train_template/model: TRANSITv25f
+  - override step_train_template/trainer: 200e_noclip.yaml
+  - override step_train_template/model/optimizer: AdamW_lr2-4
+
+step_train_template:
+  model:
+    reverse_pass_mode: additional_input
+    valid_plots: False
+    afterglow_epoch: 999999999
+
+delete_existing_run_dir: False
+
+do_train_template: True
+do_export_template: False
+do_export_latent: False
+do_transport_sideband: False
+do_evaluation: False
+do_cwola: False
+do_evaluate_cwola: False
+do_plot_compare: False
+
+verbose_validation: False
+
+general:
+  name: TRANSITv0v2_LHCO
+  subfolder: TEST/
+  seed: 12345 # For reproducibility
+  run_dir: workspaces/${general.subfolder}${general.name}
+  do_dataset_plots: True
