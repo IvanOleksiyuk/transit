@@ -417,7 +417,10 @@ def _draw_event_transport_trajectories(model, plot_path, w1_, m_pair_, var, var_
             if model.use_disc_lat:
                 zs.append(model.disc_lat(content, style))
             elif model.use_disc_reco:
-                zs.append(model.disc_reco(w1, w2))
+                if hasattr(model, "use_disc_reco_doublecond") and model.use_disc_reco_doublecond:
+                    zs.append(model.disc_reco(w1, torch.cat([w2, m_pair], dim=1)))
+                else:
+                    zs.append(model.disc_reco(w1, w2))
     if model.adversarial:
         vmin = min([float(z[:max_traj].min().cpu().detach().numpy()) for z in zs])
         vmax = max([float(z[:max_traj].max().cpu().detach().numpy()) for z in zs])

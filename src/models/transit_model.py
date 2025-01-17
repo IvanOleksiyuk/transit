@@ -142,7 +142,13 @@ class TRANSIT(LightningModule):
                 else:
                     self.use_disc_lat = False
                 if hasattr(adversarial_cfg, "discriminator2"):
-                    self.discriminator2 = adversarial_cfg.discriminator2(inpt_dim=x_dim, ctxt_dim=context_dim)
+                    if adversarial_cfg.get("reco_both_m_mhat", False):
+                        context_dim_dis2=context_dim*2
+                        self.use_disc_reco_doublecond=True
+                    else:
+                        context_dim_dis2=context_dim
+                        self.use_disc_reco_doublecond=False
+                    self.discriminator2 = adversarial_cfg.discriminator2(inpt_dim=x_dim, ctxt_dim=context_dim_dis2)
                     self.use_disc_reco = True
                 else:
                     self.use_disc_reco = False
@@ -712,7 +718,11 @@ class TRANSIT(LightningModule):
                 
                 if self.use_disc_reco:
                     # Train discriminator for reconstruction/transport
-                    d_loss_gen= self.adversarial_loss(self.disc_reco(torch.cat([w1, generated], dim=0), torch.cat([w2, w2_perm], dim=0)),  labels)
+                    if self.use_disc_reco_doublecond:
+                        d_loss_gen = self.adversarial_loss(self.disc_reco(torch.cat([w1, generated], dim=0), torch.cat([torch.cat([w2, w2_perm], dim=0), torch.cat([w2_perm, w2], dim=0)], dim=1)),  labels)
+                    else:
+                        d_loss_gen = self.adversarial_loss(self.disc_reco(torch.cat([w1, generated], dim=0), torch.cat([w2, w2_perm], dim=0)),  labels)  
+                        
                     self.toggle_optimizer(optimizer_d2)
                     self.log("d_loss_gen", d_loss_gen, prog_bar=True)
                     self.zero_grad()
@@ -762,7 +772,10 @@ class TRANSIT(LightningModule):
                         g_loss = - self.adversarial_loss(self.disc_lat(torch.cat([e1, e1_copy], dim=0), torch.cat([w2, w2_perm], dim=0)), labels)
                         total_loss2 += g_loss*g_loss_weight
                     if self.use_disc_reco:
-                        g_loss_gen = - self.adversarial_loss(self.disc_reco(torch.cat([w1, generated], dim=0), torch.cat([w2, w2_perm], dim=0)),  labels)  
+                        if self.use_disc_reco_doublecond:
+                            g_loss_gen = - self.adversarial_loss(self.disc_reco(torch.cat([w1, generated], dim=0), torch.cat([torch.cat([w2, w2_perm], dim=0), torch.cat([w2_perm, w2], dim=0)], dim=1)),  labels) 
+                        else:
+                            g_loss_gen = - self.adversarial_loss(self.disc_reco(torch.cat([w1, generated], dim=0), torch.cat([w2, w2_perm], dim=0)),  labels)  
                         total_loss2 += g_loss_gen*g_loss_gen_weight
                 else:
                     total_loss2 = total_loss
@@ -974,7 +987,10 @@ class TRANSIT(LightningModule):
                 
                 if self.use_disc_reco:
                     # Train discriminator for reconstruction/transport
-                    d_loss_gen= self.adversarial_loss(self.disc_reco(torch.cat([w1, generated], dim=0), torch.cat([w2, w2_perm], dim=0)),  labels)
+                    if self.use_disc_reco_doublecond:
+                        d_loss_gen = self.adversarial_loss(self.disc_reco(torch.cat([w1, generated], dim=0), torch.cat([torch.cat([w2, w2_perm], dim=0), torch.cat([w2_perm, w2], dim=0)], dim=1)),  labels) 
+                    else:
+                        d_loss_gen = self.adversarial_loss(self.disc_reco(torch.cat([w1, generated], dim=0), torch.cat([w2, w2_perm], dim=0)),  labels)  
                     self.log("valid\d_loss_gen", d_loss_gen, prog_bar=True)
             
         if batch_idx == 0 and self.valid_plots and self.current_epoch%self.valid_plot_freq==0:
