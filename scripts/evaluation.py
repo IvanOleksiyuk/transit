@@ -213,7 +213,7 @@ def evaluate_model(cfg, original_data, target_data, template_data):
     plot_path= orig_cfg["paths"]["output_dir"]+"/../plots/"
     os.makedirs(plot_path, exist_ok=True)
 
-    log.info("Loading best checkpoint")
+    log.info("Loading checkpoint")
     #device = "cuda" if torch.cuda.is_available() else "cpu"
     device = "cpu"
     model_class = hydra.utils.get_class(orig_cfg.model._target_)
@@ -383,7 +383,7 @@ def evaluate_model(cfg, original_data, target_data, template_data):
         if var_name=="del_R":
             var_name="$\Delta R$"
         if var_name=="del_m":
-            var_name="$\Delta m$"
+            var_name="$\Delta m [GeV]$"
         _draw_event_transport_trajectories(model, plot_path, w1, w2, var=var, var_name=var_name, masses=np.linspace(3000, 4600, 1000), max_traj=20, processor=processor)
 
 def _draw_event_transport_trajectories(model, plot_path, w1_, m_pair_, var, var_name, masses=np.linspace(-2.5, 2.5, 126), max_traj=20, processor=None):
@@ -447,7 +447,7 @@ def _draw_event_transport_trajectories(model, plot_path, w1_, m_pair_, var, var_
         else:
             w1_plot = w1
         plt.scatter(to_np(m_pair_plot)[:max_traj], to_np(w1_plot[:, var])[:max_traj],  marker="x", label="originals", c="green")
-    plt.xlabel("$m_{jj}$")
+    plt.xlabel("$m_{jj} [GeV]$")
     plt.ylabel(var_name)
     plt.title(f"Event transport for {var_name}")
     plt.savefig(plot_path+f"event_transport_trajectories{var}.png", bbox_inches="tight")

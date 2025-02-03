@@ -7,12 +7,14 @@ sbatch /home/users/o/oleksiyu/WORK/hyperproject/transit/jobs/PAPER/TRANSITv0v3_L
 HYDRA_FULL_ERROR=1 python /home/users/o/oleksiyu/WORK/hyperproject/transit/scripts/full_run_group.py\
  --config-name full_run_group_dopings_6seeds.yaml\
  full_run_cfg=TRANSITv0v3_LHCO\
- run_dir=workspaces/PAPER/TRANSITv0v3_LHCO_dopings
+ run_dir=workspaces/PAPER/TRANSITv0v3_LHCO_dopings\
+ one_run_sh=/home/users/o/oleksiyu/WORK/hyperproject/transit/jobs/PAPER/TRANSITv0v3_LHCO_one_run.sh
 
 HYDRA_FULL_ERROR=1 python /home/users/o/oleksiyu/WORK/hyperproject/transit/scripts/full_run_group.py\
  --config-name full_run_group_stability_30.yaml\
  full_run_cfg=TRANSITv0v3_LHCO\
- run_dir=workspaces/PAPER/TRANSITv0v3_LHCO_group
+ run_dir=workspaces/PAPER/TRANSITv0v3_LHCO_group\
+ one_run_sh=/home/users/o/oleksiyu/WORK/hyperproject/transit/jobs/PAPER/TRANSITv0v3_LHCO_one_run.sh
 
 # Go to home and run:
 python submit.py /home/users/o/oleksiyu/WORK/hyperproject/workspaces/PAPER/TRANSITv0v3_LHCO_dopings
