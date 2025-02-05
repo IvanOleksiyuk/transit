@@ -72,7 +72,7 @@ export_template:
   train_data: null
   test_data:
     _target_: transit.src.data.data.CombDataset
-    oversample2: 5
+    oversample2: 4
     seed: ${general.seed}
     dataset1:
       _target_: transit.src.data.data.InMemoryDataFrameDict

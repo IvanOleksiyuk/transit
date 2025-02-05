@@ -216,7 +216,7 @@ def replace_specific_name_in_cfg(cfg, search_name, insert_value, check_value=Non
 )
 def main(cfg: DictConfig) -> None:
     log.info("<<<START FULL RUN>>>")
-    orig_full_run = hydra.compose(config_name=cfg.full_run_cfg)
+    orig_full_run = hydra.compose(config_name=cfg.full_run_cfg, overrides=cfg.overrides)
     config_list = [copy.deepcopy(orig_full_run)]
     config_list[0].general.run_dir = cfg.run_dir + "/run"
     

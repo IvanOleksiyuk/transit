@@ -8,7 +8,7 @@ from sklearn.metrics import auc, roc_curve
 
 
 def plot_closure(
-    inputs: np.ndarray, labels: np.ndarray, outputs: np.ndarray, output_path: Path
+    inputs: np.ndarray, labels: np.ndarray, outputs: np.ndarray, output_path: Path, title_suffix=""
 ):
     """Plot a ROC comparing the predictions on the template vs background."""
     # Get the combined outputs
@@ -24,12 +24,15 @@ def plot_closure(
 
     # Plot and save the ROC curve
     fig, ax = plt.subplots(figsize=(6, 6))
+    if title_suffix:
+        title_suffix = f"\n{title_suffix}"
+    plt.title(f"Closure ROC (tem: {len(tem_outs)}, bkg: {len(bkg_outs)})"+title_suffix)
     ax.plot(fpr, tpr, label=f"Template AUC: {auc_score:.3f}")
     ax.set_xlabel("False Positive Rate")
     ax.set_ylabel("True Positive Rate")
     ax.plot([0, 1], [0, 1], linestyle="--", color="black", label="Random")
     ax.legend(frameon=False, loc="upper left")
-    fig.savefig(output_path / "closure_roc.png")
+    fig.savefig(output_path / "closure_roc.png", bbox_inches="tight")
 
 
 def plot_svb(
@@ -59,4 +62,4 @@ def plot_svb(
     ax.set_ylabel("True Positive Rate")
     ax.plot([0, 1], [0, 1], linestyle="--", color="black", label="Random")
     ax.legend(frameon=False, loc="upper left")
-    fig.savefig(output_path / "svb_roc.png")
+    fig.savefig(output_path / "svb_roc.png", bbox_inches="tight")

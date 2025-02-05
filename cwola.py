@@ -99,6 +99,12 @@ def get_args():
         default=0,
         help="The seed for the random number generator",
     )
+    parser.add_argument(
+        "--title_suffix",
+        type=str,
+        default="",
+        help="Extra suffix to plot title",
+    )
     return parser.parse_args()
 
 
@@ -222,10 +228,10 @@ def main():
         
     print("[--] Plotting")
     if args.mode == "standard":
-        plot_closure(inputs, labels, outputs, args.output_path)
+        plot_closure(inputs, labels, outputs, args.output_path, title_suffix=args.title_suffix)
 
     if args.num_signal > 0:
-        plot_svb(inputs, outputs, extra_preds_sig, args.output_path)
+        plot_svb(inputs, outputs, extra_preds_sig, args.output_path, title_suffix=args.title_suffix)
 
 
 if __name__ == "__main__":

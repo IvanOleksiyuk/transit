@@ -69,6 +69,7 @@ def main(cfg: DictConfig) -> None:
             "--class_weight=" + str(cfg.class_weight),
             "--num_ensemble=" + str(cfg.num_ensemble),
             "--seed=" + str(seed),
+            "--title_suffix=" + str(cfg.cwola_eval_name),
             ]
         
         if cfg.get("extra_bkg", None) is not None:

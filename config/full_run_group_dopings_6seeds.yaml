@@ -1,5 +1,6 @@
-full_run_cfg: "TRANSITv1.yaml"
-run_dir: "workspaces/test_groups"
+# These two should definitely be provided from console
+full_run_cfg: null
+run_dir: null
 # Change the seed for the template training
 several_template_train_seeds: [1, 2, 3, 4, 5, 6] 
 

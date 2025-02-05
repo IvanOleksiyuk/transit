@@ -1,5 +1,5 @@
-full_run_cfg: "transit_reco_cons0.01_smls0.001_adv3_LHCO_CURTAINS2048b.yaml"
-run_dir: groups/transit_reco_cons0.01_smls0.001_adv3_LHCO_CURTAINS2048b/
+full_run_cfg: null
+run_dir: null
 # Change the seed for the template training
 several_template_train_seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 redo: False

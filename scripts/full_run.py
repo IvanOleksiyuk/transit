@@ -31,9 +31,9 @@ from datetime import datetime
 import subprocess
 log = logging.getLogger(__name__)
 
-def get_git_hash():
+def get_git_hash(repo_dir=None):
     try:
-        result = subprocess.run(['git', 'rev-parse', 'HEAD'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=repo_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
             return result.stdout.strip()
         else:
@@ -41,9 +41,9 @@ def get_git_hash():
     except Exception as e:
         return str(e)
 
-def get_uncommitted_changes():
+def get_uncommitted_changes(repo_dir=None):
     try:
-        result = subprocess.run(['git', 'status', '--porcelain'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(['git', 'status', '--porcelain'], cwd=repo_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode == 0:
             return result.stdout.strip()  # Returns the list of uncommitted changes
         else:
@@ -51,12 +51,12 @@ def get_uncommitted_changes():
     except Exception as e:
         return str(e)
 
-def write_git_status_to_file(file_path):
+def write_git_status_to_file(file_path, repo_dir, mode="w"):
     try:
-        git_hash = get_git_hash()
-        uncommitted_changes = get_uncommitted_changes()
-
-        with open(file_path, 'w') as file:
+        git_hash = get_git_hash(repo_dir=repo_dir)
+        uncommitted_changes = get_uncommitted_changes(repo_dir=repo_dir)
+        with open(file_path, mode) as file:
+            file.write(f"Repo Dir: {repo_dir}\n")
             file.write(f"Git Hash: {git_hash}\n")
             if uncommitted_changes:
                 file.write("Uncommitted Changes:\n")
@@ -67,6 +67,10 @@ def write_git_status_to_file(file_path):
         print(f"Git status written to {file_path}")
     except Exception as e:
         print(f"Error writing to file: {str(e)}")
+
+def update_runtime_file_func(file_path, text):
+    with open(file_path, 'a') as file:
+        file.write(f'{text}\n')
 
 @hydra.main(
     version_base=None, config_path=str('../config'), config_name="TRANSITv0v1_LHCO_test_trXex"
@@ -84,16 +88,23 @@ def main(cfg: DictConfig) -> None:
             shutil.rmtree(run_dir)
     
     # create a summary folder and a file to save the runtime of each step
+    
     summary_dir = run_dir / "summary"
     os.makedirs(summary_dir, exist_ok=True)
-    rutime_file = summary_dir / "runtime.txt"
-    
-    with open(rutime_file, 'w') as file:
-        file.write('Start time: {}\n'.format(datetime.now()))
+    rutime_file = summary_dir / "runtime.txt"    
+
+    do_update_runtime_file = cfg.get("do_update_runtime_file", False)
+    if do_update_runtime_file:
+        with open(rutime_file, 'w') as file:
+            file.write('Start time: {}\n'.format(datetime.now()))
+        update_runtime_file = lambda text: update_runtime_file_func(rutime_file, text)
+    else:
+        update_runtime_file = lambda text: None
     
     # Save git hash to a file
     git_hash_file = summary_dir / "git_hash.txt"
-    write_git_status_to_file(git_hash_file)
+    write_git_status_to_file(git_hash_file, repo_dir=root)
+    write_git_status_to_file(git_hash_file, repo_dir=root / "transit", mode="a")
     
     os.makedirs(run_dir, exist_ok=True)
     os.makedirs(cfg.step_train_template.paths.full_path, exist_ok=True)
@@ -108,8 +119,7 @@ def main(cfg: DictConfig) -> None:
         train_ptl.main(cfg.step_train_template)
         log.info(f"Finish: Train a model that will provide us with a template. Time taken: {datetime.now() - start_time}")
         log.info(f"===================================")
-        with open(rutime_file, 'a') as file:
-            file.write('Train template: {}\n'.format(datetime.now() - start_time))
+        update_runtime_file('Train template: {}\n'.format(datetime.now() - start_time))
     
     if cfg.get("do_export_template", False):
         start_time = datetime.now()
@@ -119,8 +129,7 @@ def main(cfg: DictConfig) -> None:
         generate_teplate.main(cfg.step_export_template)
         log.info(f"Finish: Generate a template dataset using the model. Time taken: {datetime.now() - start_time}")
         log.info("===================================")
-        with open(rutime_file, 'a') as file:
-            file.write('Generate template: {}\n'.format(datetime.now() - start_time))
+        update_runtime_file('Generate template: {}\n'.format(datetime.now() - start_time))
     
     if hasattr(cfg, "do_transport_sideband") and cfg.do_transport_sideband:
         start_time = datetime.now()
@@ -131,8 +140,7 @@ def main(cfg: DictConfig) -> None:
         generate_teplate.main(cfg.step_export_SB2)
         log.info(f"Finish: Generate a template dataset using the model. Time taken: {datetime.now() - start_time}")
         log.info("===================================")
-        with open(rutime_file, 'a') as file:
-            file.write('Generate sideband: {}\n'.format(datetime.now() - start_time))
+        update_runtime_file('Generate sideband: {}\n'.format(datetime.now() - start_time))
     
     if hasattr(cfg, "do_export_latent") and cfg.do_export_latent:
         start_time = datetime.now()
@@ -142,8 +150,7 @@ def main(cfg: DictConfig) -> None:
         export_latent_space.main(cfg.step_export_latent.export_latent_all)
         log.info(f"Finish: Generate latent representation of events in SR and Sidebands Time taken: {datetime.now() - start_time}")
         log.info("===================================")
-        with open(rutime_file, 'a') as file:
-            file.write('Generate latent: {}\n'.format(datetime.now() - start_time))
+        update_runtime_file('Generate latent: {}\n'.format(datetime.now() - start_time))
         
     if cfg.get("do_evaluation", False):
         start_time = datetime.now()
@@ -152,8 +159,7 @@ def main(cfg: DictConfig) -> None:
         evaluation.main(cfg)
         log.info(f"Finish: Evaluate the performance and plot the results. Time taken: {datetime.now() - start_time}")
         log.info("===================================")
-        with open(rutime_file, 'a') as file:
-            file.write('Evaluate: {}\n'.format(datetime.now() - start_time))
+        update_runtime_file('Evaluate: {}\n'.format(datetime.now() - start_time))
         
     if cfg.get("do_cwola", False):
         start_time = datetime.now()
@@ -166,8 +172,7 @@ def main(cfg: DictConfig) -> None:
             run_cwola.main(cfg.step_cwola)
         log.info(f"Finish: Train CWOLA model using the template dataset and the real data. Time taken: {datetime.now() - start_time}")
         log.info("===================================")
-        with open(rutime_file, 'a') as file:
-            file.write('Train CWOLA: {}\n'.format(datetime.now() - start_time))
+        update_runtime_file('Train CWOLA: {}\n'.format(datetime.now() - start_time))
 
     if cfg.get("do_evaluate_cwola", False):
         start_time = datetime.now()
@@ -180,8 +185,7 @@ def main(cfg: DictConfig) -> None:
             cwola_evaluation.main(cfg.step_cwola)
         log.info(f"Finish: Evaluate the performance of the CWOLA model. Time taken: {datetime.now() - start_time}")
         log.info("===================================")
-        with open(rutime_file, 'a') as file:
-            file.write('Evaluate CWOLA: {}\n'.format(datetime.now() - start_time))
+        update_runtime_file('Evaluate CWOLA: {}\n'.format(datetime.now() - start_time))
 
     if cfg.get("do_plot_compare", False):
         start_time = datetime.now()
@@ -190,8 +194,7 @@ def main(cfg: DictConfig) -> None:
         plot_compare.main(cfg.step_plot_compare)
         log.info(f"Finish: Produce a set of final plots and tables for one run. Time taken: {datetime.now() - start_time}")
         log.info("===================================")
-        with open(rutime_file, 'a') as file:
-            file.write('Plot compare: {}\n'.format(datetime.now() - start_time))
+        update_runtime_file('Plot compare: {}\n'.format(datetime.now() - start_time))
         
     if hasattr(cfg, "do_cleanup") and cfg.do_cleanup:
         start_time = datetime.now()
@@ -206,8 +209,7 @@ def main(cfg: DictConfig) -> None:
         time_chart.main(rutime_file, save_path=summary_dir / "time_plot.png")
         log.info(f"Finish: Produce a set of summary plots. Time taken: {datetime.now() - start_time}")
         log.info("===================================")
-        with open(rutime_file, 'a') as file:
-            file.write('Summary plots: {}\n'.format(datetime.now() - start_time))
+        update_runtime_file('Summary plots: {}\n'.format(datetime.now() - start_time))
     
     log.info("<<<END FULL RUN>>>")
 
@@ -218,8 +220,7 @@ def main(cfg: DictConfig) -> None:
         check_close.main(cfg.check_close)
         #log.info(f"Finish: Check the hash of the output files. Time taken: {datetime.now() - start_time}")
         #log.info("===================================")
-        with open(rutime_file, 'a') as file:
-            file.write('Check hash: {}\n'.format(datetime.now() - start_time))
+        update_runtime_file('Check hash: {}\n'.format(datetime.now() - start_time))
 
     done_file_path = run_dir/"ALL.DONE"
     with open(done_file_path, "w") as f:

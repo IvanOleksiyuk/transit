@@ -9,7 +9,7 @@ defaults:
   - step_export_SB1: transit_LHCO
   - step_export_SB2: transit_LHCO
   - step_evaluate: transit_LHCO_fast
-  - step_cwola: BDT_LHCO_allCWOLA_SBcheck
+  - step_cwola: BDT_LHCO_allCWOLA
   - step_export_latent: transit_LHCO
   - step_plot_compare: transit_LHCO
   - override step_train_template/model: TRANSITv25f
@@ -35,6 +35,7 @@ do_evaluate_cwola: True
 do_plot_compare: True
 
 verbose_validation: False
+do_update_runtime_file: True
 
 general:
   name: TRANSITv0v2_LHCO
