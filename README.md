@@ -17,10 +17,10 @@ do_export_template=0 \
 do_export_latent=0 \
 do_transport_sideband=0 \
 do_evaluation=0 \
-do_cwola=1 \
+do_cwola=0 \
 do_evaluate_cwola=0 \
 do_plot_compare=0 \
-
+do_collect_metrics=1 \
 
 # In case you  want to evaluate again without trainng everything
 
@@ -51,3 +51,5 @@ HYDRA_FULL_ERROR=1 python /home/users/o/oleksiyu/WORK/hyperproject/transit/scrip
 full_run_cfg=TRANSITv0v2_LHCO \
 run_dir=workspaces/PAPER/TRANSITv0v2_LHCO_dopings \
 redo=1 \
+
+

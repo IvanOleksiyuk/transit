@@ -8,6 +8,7 @@
 # 4 - train cwola
 # 5 - evaluate the performance and plot the results
 # 6 - produce a set of final plots and tables for one run
+# 7 - aggregate the metrics from all the runs
  
 import pyrootutils
 root = pyrootutils.setup_root(search_from=__file__, pythonpath=True, cwd=True, indicator=".project-root")
@@ -18,16 +19,62 @@ from pathlib import Path
 import os
 import shutil
 from omegaconf import DictConfig, OmegaConf, ListConfig
-from transit.src.utils.hydra_utils import instantiate_collection, log_hyperparameters, print_config, reload_original_config, save_config
-import transit.scripts.evaluation as evaluation
 import transit.scripts.full_run as full_run
 import copy
 import transit.scripts.plot_compare as plot_compare
 import matplotlib.pyplot as plt
 import sys
-import subprocess
 log = logging.getLogger(__name__)
+import pickle
+import numpy as np
 
+def parse_metrics_file(filepath):
+    """Parses a metrics file and returns a dictionary of metrics."""
+    if filepath.endswith('.txt'):
+        metrics = {}
+        with open(filepath, 'r') as file:
+            for line in file:
+                if ':' in line:
+                    key, value = line.split(':')
+                    metrics[key.strip()] = float(value.strip())
+        return metrics
+    elif filepath.endswith('.pkl'):
+        with open(filepath, 'rb') as file:
+            return pickle.load(file)
+    else:
+        raise ValueError("Unsupported file type. Use a '.txt' or '.pkl' file.")
+
+def find_and_process_metrics(root_folder, output_file, metrics_filename="metrics.txt"):
+    """Finds all metrics files, computes averages and standard deviations, and writes results to output_file."""
+    all_metrics = {}
+    
+    # Walk through directory tree to find all specified metrics files
+    for dirpath, _, filenames in os.walk(root_folder):
+        for filename in filenames:
+            if filename == metrics_filename:
+                file_path = os.path.join(dirpath, filename)
+                metrics = parse_metrics_file(file_path)
+                
+                for key, value in metrics.items():
+                    if key not in all_metrics:
+                        all_metrics[key] = []
+                    all_metrics[key].append(value)
+    
+    # Compute average and standard deviation for each metric
+    final_metrics = {}
+    for key, values in all_metrics.items():
+        avg = np.mean(values)
+        std = np.std(values, ddof=1)  # Using sample standard deviation (ddof=1)
+        final_metrics[key] = (avg, std)
+    
+    # Write results to output file
+    with open(output_file, 'w') as file:
+        for key, (avg, std) in final_metrics.items():
+            file.write(f"{key}_avg: {avg:.4f}\n")
+            file.write(f"{key}_std: {std:.4f}\n")
+    
+    pickle.dump(final_metrics, open(output_file.with_suffix('.pkl'), 'wb'))
+            
 def modify_copy_and_submit(path1, path2):
     # Ensure the provided paths exist
     if not os.path.isfile(path1):
@@ -110,7 +157,6 @@ def expand_doping(config_list, several_doping, check_doping):
             new_config.general.run_dir = cfg.general.run_dir + f"-doping_{doping}"
             new_config_list.append(new_config)
     return new_config_list            
-
 
 def equal_simple(a, b):
     return a == b
@@ -216,7 +262,20 @@ def replace_specific_name_in_cfg(cfg, search_name, insert_value, check_value=Non
 )
 def main(cfg: DictConfig) -> None:
     log.info("<<<START FULL RUN>>>")
-    orig_full_run = hydra.compose(config_name=cfg.full_run_cfg, overrides=cfg.overrides)
+
+    # Create a folder for the run group
+    group_dir = Path(cfg.run_dir)
+    os.makedirs(group_dir, exist_ok=True)
+
+    # Get the full config
+    if hasattr(cfg, "hyperparameters"):
+        hyper_overrides = []
+        for key, value in cfg.hyperparameters.items():
+            hyper_overrides.append(f"hyperparameters.{key}={value}")
+        pickle.dump(dict(cfg.hyperparameters), open(cfg.run_dir + "/hyperparameters.pkl", "wb"))
+    else:
+        hyper_overrides = []
+    orig_full_run = hydra.compose(config_name=cfg.full_run_cfg, overrides=hyper_overrides+cfg.overrides)
     config_list = [copy.deepcopy(orig_full_run)]
     config_list[0].general.run_dir = cfg.run_dir + "/run"
     
@@ -227,10 +286,7 @@ def main(cfg: DictConfig) -> None:
         config_list = expand_doping(config_list, cfg.several_doping, cfg.check_doping)
     if hasattr(cfg, "several_template_train_seeds"):
         config_list = expand_template_train_seed(config_list, cfg.several_template_train_seeds, not_just_seeds=cfg.not_just_seeds)
-    
-    # Create a folder for the run group
-    group_dir = Path(cfg.run_dir)
-    os.makedirs(group_dir, exist_ok=True)
+
 
     # For each config create its directory and save the config
     for i, run_cfg in enumerate(config_list):
@@ -279,6 +335,10 @@ def main(cfg: DictConfig) -> None:
                     plot_compare.main(cfg.stability_analysis_cfg)
         else:
             plot_compare.main(cfg.stability_analysis_cfg)
+    
+    if cfg.do_metric_aggregation:
+        log.info("Metric aggregation")
+        find_and_process_metrics(group_dir, group_dir / "metrics_comb.txt")
         
 
 if __name__ == "__main__":

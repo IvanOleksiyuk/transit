@@ -38,7 +38,7 @@ several_confs:
     run_dir: ${general.run_dir}
     cwola_path: ${general.run_dir}/cwola_latent/
     cwola_eval_path: ${general.run_dir}/plots/cwola_latent_3000_eval/
-    cwola_eval_title: "cwola laSB1+laSB2 vs laSR"
+    cwola_eval_name: "cwola laSB1+laSB2 vs laSR"
     datasets:
       datasr: ${data.cwola.dataSR_latent_3000}
       extra_signal: ${data.cwola.data_extra_sig_latent_3000}
@@ -130,71 +130,77 @@ several_confs:
     seeds: [0]
     extra_bkg: 0
     extra_signal: 0
-  # latent_SB1_vs_SB2:
-  #   run_dir: ${general.run_dir}
-  #   cwola_path: ${general.run_dir}/latent_SB1_vs_SB2/
-  #   cwola_eval_path: ${general.run_dir}/plots/cwola_3000_eval/
-  #   cwola_eval_name: "cwola SB2 sig"
-  #   datasets:
-  #     datasr: 
-  #       _target_: transit.src.data.data.InMemoryDataFrameDict
-  #       plotting_path: ${general.run_dir}/plots/input/cwola/data_SR_latent_SB1_vs_SB2/
-  #       list_order: ["template"]
-  #       file_path: ${path.data_dir}/events_anomalydetection_v2.features_prepCURTAINS.h5
-  #       processor_cfg: 
-  #         - _target_: transit.src.data.data.ProcessorSplitDataFrameVars
-  #           frame_name: "df"
-  #           new_df_dict: {"mass": ["m_jj"], "is_signal": ["is_signal"]}
-  #         - _target_: transit.src.data.data.ProcessorLoadInsertDatasets
-  #           dataset_files:
-  #           - ${general.run_dir}/template/outputs/export_latent_all.h5
-  #         - _target_: transit.src.data.data.ProcessorIntervals
-  #           scalar_df_name: "mass"
-  #           var_name: "m_jj"
-  #           intervals: [[3000, 3300]]
-  #         - _target_: transit.src.data.data.ProcessorMergeFrames
-  #           frame_names: ["latent", "mass"]
-  #           new_frame_name: "template"
-  #         - _target_: transit.src.data.data.ProcessorAddColumn
-  #           frame_name: "template"
-  #           column_name: "is_signal"
-  #           column_values: -1
-  #     template:
-  #       _target_: transit.src.data.data.InMemoryDataFrameDict
-  #       plotting_path: ${general.run_dir}/plots/input/cwola/template/
-  #       list_order: ["template"]
-  #       file_path: ${path.data_dir}/events_anomalydetection_v2.features_prepCURTAINS.h5
-  #       processor_cfg: 
-  #         - _target_: transit.src.data.data.ProcessorSplitDataFrameVars
-  #           frame_name: "df"
-  #           new_df_dict: {"mass": ["m_jj"], "is_signal": ["is_signal"]}
-  #         - _target_: transit.src.data.data.ProcessorLoadInsertDatasets
-  #           dataset_files:
-  #           - ${general.run_dir}/template/outputs/export_latent_all.h5
-  #         - _target_: transit.src.data.data.ProcessorIntervals
-  #           scalar_df_name: "mass"
-  #           var_name: "m_jj"
-  #           intervals: [[3700, 4600]]
-  #         - _target_: transit.src.data.data.ProcessorMergeFrames
-  #           frame_names: ["latent", "mass"]
-  #           new_frame_name: "template"
-  #         - _target_: transit.src.data.data.ProcessorAddColumn
-  #           frame_name: "template"
-  #           column_name: "is_signal"
-  #           column_values: -1
-  #     extra_signal: null
-  #     extra_bkg: null
-  #   cwola_subfolders: window_3100_3300__3700_3900/dope_3000/
-  #   mode: standard
-  #   num_signal: 3000
-  #   sideband_1: "3100_3300"
-  #   sideband_2: "3700_3900"
-  #   num_folds: 5
-  #   max_iter: 250
-  #   early_stopping: 1
-  #   validation_fraction: 0.1
-  #   class_weight: balanced
-  #   num_ensemble: 5
-  #   seeds: [0]
-  #   extra_bkg: 0
-  #   extra_signal: 0
+  latent_SB1_vs_SB2:
+    run_dir: ${general.run_dir}
+    cwola_path: ${general.run_dir}/latent_SB1_vs_SB2/
+    cwola_eval_path: ${general.run_dir}/plots/cwola_3000_eval/
+    cwola_eval_name: "latent_SB1_vs_SB2"
+    datasets:
+      datasr: 
+        _target_: transit.src.data.data.InMemoryDataFrameDict
+        plotting_path: ${general.run_dir}/plots/input/cwola/data_SR_latent_SB1_vs_SB2/
+        list_order: ["data"]
+        file_path: ${path.data_dir}/events_anomalydetection_v2.features_prepCURTAINS.h5
+        processor_cfg: 
+          - _target_: transit.src.data.data.ProcessorSplitDataFrameVars
+            frame_name: "df"
+            new_df_dict: {"mass": ["m_jj"], "is_signal": ["is_signal"]}
+          - _target_: transit.src.data.data.ProcessorLoadInsertDatasets
+            dataset_files:
+            - ${general.run_dir}/template/outputs/export_latent_all.h5
+          - _target_: transit.src.data.data.ProcessorSignalContamination
+            frame_name: "is_signal"
+            n_sig: 0
+          - _target_: transit.src.data.data.ProcessorIntervals
+            scalar_df_name: "mass"
+            var_name: "m_jj"
+            intervals: [[3000, 3300]]
+          - _target_: transit.src.data.data.ProcessorMergeFrames
+            frame_names: ["latent", "mass"]
+            new_frame_name: "data"
+          - _target_: transit.src.data.data.ProcessorAddColumn
+            frame_name: "data"
+            column_name: "is_signal"
+            column_values: 0
+      template:
+        _target_: transit.src.data.data.InMemoryDataFrameDict
+        plotting_path: ${general.run_dir}/plots/input/cwola/template/
+        list_order: ["template"]
+        file_path: ${path.data_dir}/events_anomalydetection_v2.features_prepCURTAINS.h5
+        processor_cfg: 
+          - _target_: transit.src.data.data.ProcessorSplitDataFrameVars
+            frame_name: "df"
+            new_df_dict: {"mass": ["m_jj"], "is_signal": ["is_signal"]}
+          - _target_: transit.src.data.data.ProcessorLoadInsertDatasets
+            dataset_files:
+            - ${general.run_dir}/template/outputs/export_latent_all.h5
+          - _target_: transit.src.data.data.ProcessorSignalContamination
+            frame_name: "is_signal"
+            n_sig: 0
+          - _target_: transit.src.data.data.ProcessorIntervals
+            scalar_df_name: "mass"
+            var_name: "m_jj"
+            intervals: [[3700, 4600]]
+          - _target_: transit.src.data.data.ProcessorMergeFrames
+            frame_names: ["latent", "mass"]
+            new_frame_name: "template"
+          - _target_: transit.src.data.data.ProcessorAddColumn
+            frame_name: "template"
+            column_name: "is_signal"
+            column_values: -1
+      extra_signal: null
+      extra_bkg: null
+    cwola_subfolders: window_3100_3300__3700_3900/dope_3000/
+    mode: standard
+    num_signal: 3000
+    sideband_1: "3100_3300"
+    sideband_2: "3700_3900"
+    num_folds: 5
+    max_iter: 250
+    early_stopping: 1
+    validation_fraction: 0.1
+    class_weight: balanced
+    num_ensemble: 5
+    seeds: [0]
+    extra_bkg: 0
+    extra_signal: 0

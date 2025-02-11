@@ -1,0 +1,4 @@
+run_dir: ${general.run_dir}
+do_mean_SBtoSB_closure_AUC: True
+do_laSB_closure_AUC: True
+do_generation_time: True

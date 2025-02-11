@@ -33,6 +33,10 @@ def plot_closure(
     ax.plot([0, 1], [0, 1], linestyle="--", color="black", label="Random")
     ax.legend(frameon=False, loc="upper left")
     fig.savefig(output_path / "closure_roc.png", bbox_inches="tight")
+    
+    # Save ROCAUC to a file:
+    with open(output_path / "closure_roc_auc.txt", "w") as f:
+        f.write(str(auc_score))
 
 
 def plot_svb(
@@ -63,3 +67,7 @@ def plot_svb(
     ax.plot([0, 1], [0, 1], linestyle="--", color="black", label="Random")
     ax.legend(frameon=False, loc="upper left")
     fig.savefig(output_path / "svb_roc.png", bbox_inches="tight")
+
+    # Save ROCAUC to a file:
+    with open(output_path / "svb_roc_auc.txt", "w") as f:
+        f.write(str(auc_score))

@@ -27,6 +27,7 @@ import transit.scripts.plot_compare as plot_compare
 import transit.scripts.export_latent_space as export_latent_space
 import transit.scripts.time_chart as time_chart
 import transit.scripts.check_close as check_close
+import transit.scripts.collect_metrics as collect_metrics
 from datetime import datetime
 import subprocess
 log = logging.getLogger(__name__)
@@ -210,7 +211,16 @@ def main(cfg: DictConfig) -> None:
         log.info(f"Finish: Produce a set of summary plots. Time taken: {datetime.now() - start_time}")
         log.info("===================================")
         update_runtime_file('Summary plots: {}\n'.format(datetime.now() - start_time))
-    
+
+    if hasattr(cfg, "do_collect_metrics") and cfg.do_collect_metrics:
+        start_time = datetime.now()
+        log.info("===================================")
+        log.info("Collect all the most important metrics in one place")
+        collect_metrics.main(cfg.step_collect_metrics)
+        log.info(f"Finish: Collect all the most important metrics in one place: {datetime.now() - start_time}")
+        log.info("===================================")
+        update_runtime_file('Summary plots: {}\n'.format(datetime.now() - start_time))
+
     log.info("<<<END FULL RUN>>>")
 
     if hasattr(cfg, "check_close"):

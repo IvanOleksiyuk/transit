@@ -1,7 +1,7 @@
 full_run_cfg: null
 run_dir: null
 # Change the seed for the template training
-several_template_train_seeds: [1] 
+several_template_train_seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] 
 
 # Change the number of signal events doped 
 several_doping: [0]
@@ -12,7 +12,14 @@ do_stability_analysis: False
 do_metric_aggregation: True
 not_just_seeds: True
 overrides: ["step_cwola=BDT_LHCO_oversampling_experiment", "step_evaluate=transit_LHCO", "step_cwola=BDT_LHCO_allCWOLA_SBcheck", "do_collect_metrics=1"]
-one_run_sh: /home/users/o/oleksiyu/WORK/hyperproject/transit/jobs/PAPER/TRANSITv0v2_LHCO_one_run.sh
+one_run_sh: /home/users/o/oleksiyu/WORK/hyperproject/transit/jobs/PAPER/TRANSITv0v2_LHCO_one_run_hyper20m.sh
+hyperparameters:
+  g_loss_gen_weight: 0.2
+  w_cons: 0.1
+  latent_dim: 8
+  num_blocks: 3
+  hddn_dim: 128
+  disc_hidd: 64
 
 stability_analysis_cfg:
   run_dir: null

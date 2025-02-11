@@ -4,25 +4,23 @@ defaults:
   - _self_
   - path: user
   - data: LHCO_DEFAULT_speed
-  - step_train_template: transit_reco_adv
+  - step_train_template: transitv_0v2
   - step_export_template: transit_LHCO
   - step_export_SB1: transit_LHCO
   - step_export_SB2: transit_LHCO
   - step_evaluate: transit_LHCO_fast
-  - step_cwola: BDT_LHCO_allCWOLA
+  - step_cwola: BDT_LHCO_SBcheck
   - step_export_latent: transit_LHCO
   - step_plot_compare: transit_LHCO
   - step_collect_metrics: default
-  - override step_train_template/model: TRANSITv25f
-  - override step_train_template/trainer: 200e_noclip.yaml
-  - override step_train_template/model/optimizer: AdamW_lr2-4
 
-
-step_train_template:
-  model:
-    reverse_pass_mode: additional_input
-    valid_plots: False
-    afterglow_epoch: 999999999
+hyperparameters:
+  g_loss_gen_weight: 0.2
+  w_cons: 0.1
+  latent_dim: 8
+  num_blocks: 3
+  hddn_dim: 128
+  disc_hidd: 64
 
 delete_existing_run_dir: False
 
@@ -30,11 +28,11 @@ do_train_template: True
 do_export_template: True
 do_export_latent: True
 do_transport_sideband: True
-do_evaluation: True
+do_evaluation: False
 do_cwola: True
-do_evaluate_cwola: True
-do_plot_compare: True
-do_collect_metrics: False
+do_evaluate_cwola: False
+do_plot_compare: False
+do_collect_metrics: True
 
 verbose_validation: False
 do_update_runtime_file: True
