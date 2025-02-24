@@ -1,0 +1,24 @@
+template_training:
+  _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
+
+  data_config:
+    data_dir: /srv/beegfs/scratch/groups/rodem/skycurtains/gaiadump/patches/
+    patch_name: patch_l198.00_b32.23
+    feature_list:
+      - latitudes
+      - longitudes
+      - bp_rp
+      - phot_g_mean_mag
+      - pm_lon_coslat #make sure the proper motions are always last - because they are used for the split
+      - pm_lat
+    context: "pm_lat"
+    bins: [-34.18621, -28.18621, -22.18621, -16.18621]
+    split_frac: 0.2
+    resample: True
+  minmax: True
+  load_config:
+    batch_size: 32
+    num_workers: 16
+    pin_memory: False
+    drop_last: True
+    persistent_workers: true

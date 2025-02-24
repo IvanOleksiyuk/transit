@@ -50,10 +50,11 @@ def main(cfg: DictConfig) -> None:
 
     log.info("Instantiating the data module")
     datamodule = hydra.utils.instantiate(cfg.data.datamodule)
+    if hasattr(datamodule, "setup"):
+        datamodule.setup(stage="fit")
     
     log.info("Scale N epochs with dataseize") #For very small datasets we have to scale the number of epochs
     if cfg.get("do_scale_epochs", False):
-        datamodule.setup(stage="fit")
         train_data_length = len(datamodule.train_dataloader().dataset)
         # get the batch size
         batch_size = datamodule.train_dataloader().batch_size
@@ -61,7 +62,7 @@ def main(cfg: DictConfig) -> None:
         num_batches = train_data_length // batch_size
         if num_batches < 100:
             epoch_scale = 100 // num_batches
-        update_sheduler_cfgs(cfg, epoch_scale)
+            update_sheduler_cfgs(cfg, epoch_scale)
     
     log.info("Instantiating the model")
     model = hydra.utils.instantiate(cfg.model, inpt_dim=datamodule.get_dims(), var_group_list=datamodule.get_var_group_list(), seed=cfg.seed)
