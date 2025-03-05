@@ -14,18 +14,9 @@ def submit_and_delete_sh_files(start_directory):
             if file.endswith(".sh"):
                 file_path = os.path.join(root, file)
                 try:
-                    # Change directory to home
-                    os.chdir(os.path.expanduser("~"))
-                    
-                    # Submit the .sh file using sbatch
-                    print(f"Submitting: {file_path}")
-                    subprocess.run(["sbatch", file_path], check=True)
-
                     # Delete the file after submission
                     print(f"Deleting: {file_path}")
                     os.remove(file_path)
-                except subprocess.CalledProcessError as e:
-                    print(f"Error submitting {file_path}: {e}")
                 except Exception as e:
                     print(f"Error handling {file_path}: {e}")
 

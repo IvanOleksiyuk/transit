@@ -258,7 +258,7 @@ def replace_specific_name_in_cfg(cfg, search_name, insert_value, check_value=Non
 
 # TODO pyroot utils will remove the need for ../configs
 @hydra.main(
-    version_base=None, config_path=str('../config'), config_name="full_run_group_stability_30.yaml"
+    version_base=None, config_path=str('../config'), config_name="full_run_group_dopings_6seeds_notrain.yaml"
 )
 def main(cfg: DictConfig) -> None:
     log.info("<<<START FULL RUN>>>")
@@ -307,7 +307,8 @@ def main(cfg: DictConfig) -> None:
             if os.path.isfile(done_file_path) and not cfg.redo:
                 print("already done " + done_file_path)
             else:
-                delete_folder_if_exists(run_cfg.general.run_dir+"/template")
+                if cfg.get("delete_template", False):
+                    delete_folder_if_exists(run_cfg.general.run_dir+"/template")
                 full_run.main(copy.deepcopy(run_cfg))
             plt.close("all")
     else:
@@ -317,7 +318,10 @@ def main(cfg: DictConfig) -> None:
             if os.path.isfile(done_file_path) and not cfg.redo:
                 print("already done " + done_file_path)
             else:
-                #delete_folder_if_exists(run_cfg.general.run_dir+"/template")
+                if cfg.get("delete_template", False):
+                    delete_folder_if_exists(run_cfg.general.run_dir+"/template")
+                if os.path.isfile(done_file_path):
+                    os.remove(done_file_path)
                 modify_copy_and_submit(cfg.one_run_sh, os.path.abspath(run_cfg.general.run_dir))
     
     if cfg.do_stability_analysis:

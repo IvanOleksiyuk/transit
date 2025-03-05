@@ -31,14 +31,14 @@ several_confs:
     early_stopping: 1
     validation_fraction: 0.1
     class_weight: balanced
-    num_ensemble: 5
+    num_ensemble: 50
     seeds: [0, 1]
     extra_bkg: 1
   cwola_latent:
     run_dir: ${general.run_dir}
     cwola_path: ${general.run_dir}/cwola_latent/
     cwola_eval_path: ${general.run_dir}/plots/cwola_latent_3000_eval/
-    cwola_eval_title: "latent cwola sig reg"
+    cwola_eval_name: "latent cwola sig reg"
     datasets:
       datasr: ${data.cwola.dataSR_latent_3000}
       extra_signal: ${data.cwola.data_extra_sig_latent_3000}
@@ -55,6 +55,6 @@ several_confs:
     early_stopping: 1
     validation_fraction: 0.1
     class_weight: balanced
-    num_ensemble: 5
+    num_ensemble: 50
     seeds: [0, 1]
     extra_bkg: 1
