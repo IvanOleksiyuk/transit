@@ -248,7 +248,7 @@ class TRANSIT(LightningModule):
                 x_inp, m_pair, m_add = sample[0][:, :-1], sample[0][:, -1:], sample[0][:, -1:]
                 mask = None
             elif phase=="generate":
-                x_inp, m_pair, m_add = sample[0][:, :-1], sample[0][:, -1:], sample[1][:, -1:]
+                x_inp, m_pair, m_add = sample[0][:, :-1], sample[0][:, -1:], sample[2]
                 mask = None                
         else:
             x_inp, m_pair, m_add = sample

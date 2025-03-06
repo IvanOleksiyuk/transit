@@ -267,7 +267,7 @@ def plot_feature_spread(
     shuffle=True,
     do_2d_hist_instead_of_contour=False,
     save_name=None,
-    nbins = 60,
+    nbins = 30,
 ):
     
     n_features = sampled.shape[1] #- 1

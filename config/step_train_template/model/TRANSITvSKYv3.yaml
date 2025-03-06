@@ -55,7 +55,7 @@ adversarial_cfg:
     act_o: "sigmoid"
   optimizer_main: default.yaml
   optimizer_d: default.yaml
-  warmup: 5
+  warmup: 0
   g_loss_weight: 0
   g_loss_gen_weight: 0.1
   every_n_steps_g: 1

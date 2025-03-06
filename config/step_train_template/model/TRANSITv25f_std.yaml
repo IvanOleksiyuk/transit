@@ -45,7 +45,7 @@ loss_cfg:
 adversarial_cfg:
   mode: "double_discriminator_priority"
   discriminator2:
-    _target_: mltools.mlp.MLP
+    _target_: transit.mltools.mlp.MLP
     _partial_: true
     outp_dim: 1
     hddn_dim: [64, 64, 64, 64]

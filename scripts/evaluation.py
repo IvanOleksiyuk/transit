@@ -82,7 +82,10 @@ def main(cfg):
     
     with open(cfg.general.run_dir+"/template/wandb_id.txt", "r") as f:
         run_id = f.read().strip()
-    wandb.init(id=run_id, resume="allow")
+    try:
+        wandb.init(id=run_id, resume="allow")
+    except:
+        print("Could not resume wandb run")
     
     # Plot the transport from SB1 to SB2
     data = {} # a dictionary to store the data
@@ -127,13 +130,13 @@ def main(cfg):
         log.info("contour plot is done, in "+str(time.time()-time_start)+" seconds")
         
     if getattr(cfg.step_evaluate, "plot_contour_SB1toSB2transport", True):
-        if check_data_loaded(["original_SB1_data", "SB1_gen_file", "original_SB2_data"], data)!=[]:
-            print("Missing data: ", check_data_loaded(["original_SB1_data", "SB1_gen_file", "original_SB2_data"], data))
+        if check_data_loaded(["original_for_SB1_data", "SB1_gen_file", "original_for_SB2_data", "target_for_SB1_data", "target_for_SB2_data"], data)!=[]:
+            print("Missing data: ", check_data_loaded(["original_for_SB1_data", "SB1_gen_file", "original_for_SB2_data", "target_for_SB1_data", "target_for_SB2_data"], data))
         else:
             pltt.plot_feature_spread(
-                data["original_SB1_data"][variables].to_numpy(),
+                data["target_for_SB1_data"][variables].to_numpy(),
                 data["SB1_gen_file"][variables].to_numpy(),
-                original_data = data["original_SB2_data"][variables].to_numpy(),
+                original_data = data["original_for_SB1_data"][variables].to_numpy(),
                 feature_nms = variables,
                 save_dir=Path(cfg.general.run_dir+"/plots/"),
                 plot_mode=plot_mode,
@@ -142,9 +145,9 @@ def main(cfg):
                 tag = ["SB2", "SB1"],
                 save_name="SB2_to_SB1")
             pltt.plot_feature_spread(
-                data["original_SB2_data"][variables].to_numpy(),
+                data["target_for_SB2_data"][variables].to_numpy(),
                 data["SB2_gen_file"][variables].to_numpy(),
-                original_data = data["original_SB1_data"][variables].to_numpy(),
+                original_data = data["original_for_SB2_data"][variables].to_numpy(),
                 feature_nms = variables,
                 save_dir=Path(cfg.general.run_dir+"/plots/"),
                 plot_mode=plot_mode,
@@ -156,8 +159,8 @@ def main(cfg):
     if getattr(cfg.step_evaluate, "plot_SKYclassifier_SB1toSB2transport", False):
         from src.model.denseclassifier import run_classifier_folds
         
-        SB1_data = data["original_SB1_data"].to_numpy()[:, :-1]
-        SB2_data = data["original_SB2_data"].to_numpy()[:, :-1]
+        SB1_data = data["target_for_SB1_data"].to_numpy()[:, :-1]
+        SB2_data = data["target_for_SB2_data"].to_numpy()[:, :-1]
         SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
         SB2_gen = data["SB2_gen_file"].to_numpy()[:, :-1]
         auc_score, threshold, data_preds = run_classifier_folds(

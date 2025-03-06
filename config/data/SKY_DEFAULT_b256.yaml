@@ -1,7 +1,6 @@
-resample_train: False
-resample_generate: False
+resample: True
+resample_generate: True
 resample_eval: False
-training_batch_size: 2048
 
 template_training:
   _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
@@ -19,23 +18,22 @@ template_training:
     context: "proper_motion_galactic_local_latitude"
     bins: [-13.186211, -7.1862106, -1.1862106, 4.8137894]
     split_frac: 0.2
-    resample: ${data.resample_train}
+    resample: ${data.resample}
     minmax: True
   load_config:
-    batch_size: ${data.training_batch_size}
+    batch_size: 256
     num_workers: 16
     pin_memory: False
     drop_last: True
     persistent_workers: true
 
-# Please change everything that goes below!!!
+# Please change everything that goesm below!!!
 
 export_template:
   _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
     data_dir: ${private.data_dir} 
     patch_id: patch_l198.00_b32.23
-    sample_bin: SR
     feature_list:
       - latitude_galactic_local
       - longitude_galactic_local
@@ -104,6 +102,31 @@ export_SB2:
     pin_memory: False
     drop_last: False
 
+eval_SB1:
+  _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
+  data_config:
+    data_dir: ${private.data_dir} 
+    sample_bin: SB1
+    patch_id: patch_l198.00_b32.23
+    feature_list:
+      - latitude_galactic_local
+      - longitude_galactic_local
+      - color_bp_magnitude_minus_rp_magnitude
+      - magnitude_g_band_mean_integrated
+      - proper_motion_galactic_local_longitude_cos_latitude #make sure the proper motions are always last - because they are used for the split
+      - proper_motion_galactic_local_latitude
+    context: "proper_motion_galactic_local_latitude"
+    bins: [-13.186211, -7.1862106, -1.1862106, 4.8137894]
+    split_frac: 0.2
+    resample: ${data.resample_eval}
+    only_one_sb: "sb2"
+    minmax: True
+  load_config:
+    batch_size: 2048
+    num_workers: 16
+    pin_memory: False
+    drop_last: False
+
 export_latent_all:
   _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
 
@@ -130,11 +153,11 @@ export_latent_all:
 
 # Some datasets for evaluation
 
-eval_SB1:
+eval_SB2:
   _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
     data_dir: ${private.data_dir} 
-    sample_bin: SB1
+    sample_bin: SB2
     patch_id: patch_l198.00_b32.23
     feature_list:
       - latitude_galactic_local
@@ -155,30 +178,7 @@ eval_SB1:
     pin_memory: False
     drop_last: False
 
-eval_SB2:
-  _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
-  data_config:
-    data_dir: ${private.data_dir} 
-    sample_bin: SB2
-    patch_id: patch_l198.00_b32.23
-    feature_list:
-      - latitude_galactic_local
-      - longitude_galactic_local
-      - color_bp_magnitude_minus_rp_magnitude
-      - magnitude_g_band_mean_integrated
-      - proper_motion_galactic_local_longitude_cos_latitude #make sure the proper motions are always last - because they are used for the split
-      - proper_motion_galactic_local_latitude
-    context: "proper_motion_galactic_local_latitude"
-    bins: [-13.186211, -7.1862106, -1.1862106, 4.8137894]
-    split_frac: 0.2
-    resample: ${data.resample_eval}
-    only_one_sb: "sb2"
-    minmax: True
-  load_config:
-    batch_size: 2048
-    num_workers: 16
-    pin_memory: False
-    drop_last: False
+
 
 eval_SR:
   _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
@@ -195,7 +195,6 @@ eval_SR:
       - proper_motion_galactic_local_latitude
     context: "proper_motion_galactic_local_latitude"
     bins: [-13.186211, -7.1862106, -1.1862106, 4.8137894]
-    only_one_sb: "sr"
     split_frac: 0.2
     resample: ${data.resample_eval}
     minmax: True
