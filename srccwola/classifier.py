@@ -80,6 +80,7 @@ def run_bdt_folds(
     extra_bkg: np.ndarray | None = None,
     bdt_args: dict | None = None,
     seed: int = 0,
+    aggregate_extra: str = "random",
 ) -> tuple:
     """Run a BDT ensemble over each of the k-fold splits of the some data."""
     # The lists to hold the test set outputs
@@ -125,12 +126,39 @@ def run_bdt_folds(
     all_y = np.hstack(all_y)
     all_preds = np.hstack(all_preds)
 
-    # Also get the outputs for the extra signal file
-    extra_preds = (
-        clf.predict_proba(extra_sig[:, :-2])[:, 1] if extra_sig is not None else None
-    )
-    extra_bkg_preds = (
-        clf.predict_proba(extra_bkg[:, :-2])[:, 1] if extra_bkg is not None else None
-    )
-
+    if extra_sig is not None and extra_bkg is not None:
+        if aggregate_extra=="last":
+            print("using last aggregation for extra preds")
+            # Also get the outputs for the extra signal file
+            extra_preds = (
+                clf.predict_proba(extra_sig[:, :-2])[:, 1] if extra_sig is not None else None
+            )
+            extra_bkg_preds = (
+                clf.predict_proba(extra_bkg[:, :-2])[:, 1] if extra_bkg is not None else None
+            )
+        if aggregate_extra=="mean":
+            print("using mean aggregation for extra preds")
+            extra_preds = np.mean([v for v in extra_preds_dict.values() if v is not None], axis=0)
+            extra_bkg_preds = np.mean([v for v in extra_bkg_preds_dict.values() if v is not None], axis=0)
+        elif aggregate_extra=="median":
+            print("using median aggregation for extra preds")
+            extra_preds = np.median([v for v in extra_preds_dict.values() if v is not None], axis=0)
+            extra_bkg_preds = np.median([v for v in extra_bkg_preds_dict.values() if v is not None], axis=0)
+        elif aggregate_extra=="random":
+            #For each value select a random fold to use
+            print("using random aggregation for extra preds")
+            extra_preds = []
+            extra_bkg_preds=[]
+            for i in range(len(extra_sig)):
+                preds = [v[i] for v in extra_preds_dict.values() if v is not None]
+                extra_preds.append(np.random.choice(preds))   
+            extra_preds = np.array(extra_preds)
+            for i in range(len(extra_bkg)):
+                preds = [v[i] for v in extra_bkg_preds_dict.values() if v is not None]
+                extra_bkg_preds.append(np.random.choice(preds))
+            extra_bkg_preds = np.array(extra_bkg_preds)
+    else:
+        extra_preds = None
+        extra_bkg_preds = None
+        
     return all_x, all_y, all_preds, extra_preds, extra_bkg_preds, extra_preds_dict, extra_bkg_preds_dict

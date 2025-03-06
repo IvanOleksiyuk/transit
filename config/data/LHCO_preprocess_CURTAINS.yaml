@@ -1,0 +1,7 @@
+data:
+  _target_: transit.src.data.data.InMemoryDataFrameDict
+  file_path: "/home/users/o/oleksiyu/scratch/DATA/LHCO/events_anomalydetection_v2.features.h5"
+  plotting_path: /home/users/o/oleksiyu/WORK/hyperproject/plot/user/preprocessCURTAINS_small/
+  processor_cfg: 
+    - _target_: transit.src.data.data.ProcessorLHCOcurtains
+      frame_name: "df"

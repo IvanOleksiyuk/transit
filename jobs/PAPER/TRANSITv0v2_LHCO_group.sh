@@ -1,11 +1,11 @@
 #!/bin/sh
-#SBATCH --job-name=Tv0v3G
+#SBATCH --job-name=Tv0v2G
 #SBATCH --cpus-per-task=16
 #SBATCH --ntasks=1
 #SBATCH --time=12:00:00
 #SBATCH --partition=private-dpnc-gpu
 #SBATCH --nodes=1
-#SBATCH --output=/home/users/o/oleksiyu/WORK/hyperproject/transit/jobs/job_output/TRANSITv0v3_LHCO_group-%A-%x_%a.out
+#SBATCH --output=/home/users/o/oleksiyu/WORK/hyperproject/transit/jobs/job_output/TRANSITv0v2_LHCO_group-%A-%x_%a.out
 #SBATCH --mem=32GB
 #SBATCH --gres=gpu:1
 
@@ -20,7 +20,7 @@ singularity exec --nv -B /home/users/,/srv,/tmp hyperproject_container.sif \
  HYDRA_FULL_ERROR=1 python /home/users/o/oleksiyu/WORK/hyperproject/transit/scripts/full_run_group.py\
  --config-name full_run_group_stability_30.yaml\
  full_run_cfg=TRANSITv0v2_LHCO\
- run_dir=workspaces/PAPER/TRANSITv0v3_LHCO_group"
+ run_dir=workspaces/PAPER/TRANSITv0v2_LHCO_group"
 
 # Record the end time
 end_time=$(date +%s)

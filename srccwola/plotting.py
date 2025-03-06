@@ -40,7 +40,7 @@ def plot_closure(
 
 
 def plot_svb(
-    inputs: np.ndarray, outputs: np.ndarray, extra_preds_sig: np.ndarray, output_path: Path
+    inputs: np.ndarray, outputs: np.ndarray, extra_preds_sig: np.ndarray, output_path: Path, title_suffix=""
 ) -> None:
     """Plot a ROC comparing the signal vs background predictions."""
     # Get the combined outputs
@@ -66,6 +66,7 @@ def plot_svb(
     ax.set_ylabel("True Positive Rate")
     ax.plot([0, 1], [0, 1], linestyle="--", color="black", label="Random")
     ax.legend(frameon=False, loc="upper left")
+    plt.title(f"Signal vs Background ROC"+title_suffix)
     fig.savefig(output_path / "svb_roc.png", bbox_inches="tight")
 
     # Save ROCAUC to a file:
