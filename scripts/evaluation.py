@@ -144,6 +144,7 @@ def main(cfg):
                 x_bounds=cfg.step_evaluate.x_bounds or None,
                 tag = ["SB2", "SB1"],
                 save_name="SB2_to_SB1")
+            log.info("Plotted SB2 to SB1 transport")
             pltt.plot_feature_spread(
                 data["target_for_SB2_data"][variables].to_numpy(),
                 data["SB2_gen_file"][variables].to_numpy(),
@@ -155,14 +156,30 @@ def main(cfg):
                 x_bounds=cfg.step_evaluate.x_bounds or None,
                 tag = ["SB1", "SB2"],
                 save_name="SB1_to_SB2")
+            log.info("Plotted SB1 to SB2 transport")
     
     if getattr(cfg.step_evaluate, "plot_SKYclassifier_SB1toSB2transport", False):
         from src.model.denseclassifier import run_classifier_folds
         
         SB1_data = data["target_for_SB1_data"].to_numpy()[:, :-1]
-        SB2_data = data["target_for_SB2_data"].to_numpy()[:, :-1]
         SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
+        SB2_data = data["target_for_SB2_data"].to_numpy()[:, :-1]
         SB2_gen = data["SB2_gen_file"].to_numpy()[:, :-1]
+        
+        # Limit the number of events to train the classifier on faster
+        n_max=cfg.step_evaluate.get("n_max_class_train", 10000)
+        if n_max is not None:
+            if len(SB1_data)>n_max:
+                SB1_data = SB1_data[:n_max]
+            if len(SB1_gen)>n_max:
+                SB1_gen = SB1_gen[:n_max]
+            if len(SB2_data)>n_max:
+                SB2_data = SB2_data[:n_max]
+            if len(SB2_gen)>n_max:
+                SB2_gen = SB2_gen[:n_max]
+            
+            
+        log.info("Starting classifier train/eval")
         auc_score, threshold, data_preds = run_classifier_folds(
             SB2_data, 
             SB2_gen,
@@ -170,9 +187,12 @@ def main(cfg):
             tag=f"sb1to2",
             return_threshold=False,  # if key == "sb12r" else False,
         )
-        print(auc_score)
+        log.info("Finish classifier train/eval")
+        
+        log.info(f"sb1to2 vs sb2 AUC={auc_score}")
         wandb.log({"evaluation/sb1to2_AUC": auc_score})
         
+        log.info("Starting classifier train/eval")
         auc_score, threshold, data_preds = run_classifier_folds(
             SB1_data, 
             SB1_gen,
@@ -180,9 +200,10 @@ def main(cfg):
             tag=f"sb2to1",
             return_threshold=False,  # if key == "sb12r" else False,
         )
-        data["SB1_gen_file"]
-        print(auc_score)
+        log.info("Finish classifier train/eval")
+        log.info(f"sb1to2 vs sb2 AUC={auc_score}")
         wandb.log({"evaluation/sb2to1_AUC": auc_score})
+        
 
     if getattr(cfg.step_evaluate, "plot_everything_else", True):
         evaluate_model(cfg, data["original_data"], data["target_data"], data["template_file"])

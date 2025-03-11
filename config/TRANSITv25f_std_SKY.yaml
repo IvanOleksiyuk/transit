@@ -5,13 +5,12 @@ defaults:
   - private: private_baobab
   - path: user
   - data: SKY_DEFAULT
-  - step_train_template: transit_reco_adv
+  - step_train_template: transitv_0v2
   - step_export_template: transit
   - step_export_SB1: default
   - step_export_SB2: default
   - step_evaluate: transit_SKY
   - experiment/TRANSITv25f_std_SKY@_global_
-
 
 step_train_template:
   model:

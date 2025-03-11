@@ -58,7 +58,7 @@ class TRANSIT(LightningModule):
         scheduler: Mapping,
         encoder_cfg,
         decoder_cfg,
-        network_type = "MLP",
+        network_type = "partial_context",
         encoder_cfg2: Mapping = None,
         latent_dim2: int = None, 
         var_group_list: list = None,

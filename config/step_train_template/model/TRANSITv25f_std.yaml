@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - optimizer: default.yaml
+  - optimizer: AdamW_lr2-4.yaml
   - scheduler: cyclic.yaml
 
 network_type: partial_context
