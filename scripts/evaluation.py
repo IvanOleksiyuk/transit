@@ -168,7 +168,7 @@ def main(cfg):
         
         # Limit the number of events to train the classifier on faster
         n_max=cfg.step_evaluate.get("n_max_class_train", 10000)
-        if n_max is not None:
+        if n_max is not None and n_max>0:
             if len(SB1_data)>n_max:
                 SB1_data = SB1_data[:n_max]
             if len(SB1_gen)>n_max:
@@ -180,7 +180,7 @@ def main(cfg):
             
             
         log.info("Starting classifier train/eval")
-        auc_score, threshold, data_preds = run_classifier_folds(
+        auc_score_1to2, threshold, data_preds = run_classifier_folds(
             SB2_data, 
             SB2_gen,
             save_dir=Path(cfg.general.run_dir),
@@ -189,11 +189,11 @@ def main(cfg):
         )
         log.info("Finish classifier train/eval")
         
-        log.info(f"sb1to2 vs sb2 AUC={auc_score}")
-        wandb.log({"evaluation/sb1to2_AUC": auc_score})
+        log.info(f"sb1to2 vs sb2 AUC={auc_score_1to2}")
+        wandb.log({"evaluation/sb1to2_AUC": auc_score_1to2})
         
         log.info("Starting classifier train/eval")
-        auc_score, threshold, data_preds = run_classifier_folds(
+        auc_score_2to1, threshold, data_preds = run_classifier_folds(
             SB1_data, 
             SB1_gen,
             save_dir=Path(cfg.general.run_dir),
@@ -201,9 +201,13 @@ def main(cfg):
             return_threshold=False,  # if key == "sb12r" else False,
         )
         log.info("Finish classifier train/eval")
-        log.info(f"sb1to2 vs sb2 AUC={auc_score}")
-        wandb.log({"evaluation/sb2to1_AUC": auc_score})
-        
+        log.info(f"sb1to2 vs sb2 AUC={auc_score_2to1}")
+        wandb.log({"evaluation/sb2to1_AUC": auc_score_2to1})
+    
+    with open(cfg.general.run_dir+"/template/evaluate_sbtosb.txt", "w") as f:
+        f.write(f"n_max_class_train={n_max}\n")
+        f.write(f"sb1to2 vs sb2 AUC={auc_score_2to1}\n")
+        f.write(f"sb2to1 vs sb1 AUC={auc_score_1to2}\n")
 
     if getattr(cfg.step_evaluate, "plot_everything_else", True):
         evaluate_model(cfg, data["original_data"], data["target_data"], data["template_file"])
