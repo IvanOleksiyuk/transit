@@ -5,40 +5,36 @@ defaults:
   - private: private_baobab
   - path: user
   - data: SKY_DEFAULT
-  - step_train_template: transit_reco_adv
+  - step_train_template: transitv_0v2
   - step_export_template: transit
-  - step_export_SB1: transit_LHCO
-  - step_export_SB2: transit_LHCO
-  - step_evaluate: transit_LHCO_fast
-  - step_cwola: BDT_LHCO_allCWOLA
-  - step_export_latent: transit_LHCO
-  - step_plot_compare: transit_LHCO
-  - experiment/TRANSITvSKYv4_SKY@_global_
+  - step_export_SB1: default
+  - step_export_SB2: default
+  - step_evaluate: transit_SKY
+  - experiment/TRANSITv25f_std_SKY@_global_
 
 step_train_template:
   model:
     reverse_pass_mode: additional_input
-    valid_plots: True
+    valid_plots: False
     afterglow_epoch: 999999999
-    valid_plot_freq: 10
 
 delete_existing_run_dir: False
 
-do_train_template: False
+do_train_template: True
 do_export_template: True
+do_transport_sideband: True
 do_export_latent: False
-do_evaluation: False
+do_evaluation: True
 do_cwola: False
 do_evaluate_cwola: False
 do_plot_compare: False
 
-do_transport_sideband: True
 
 verbose_validation: True
 
 general:
-  name: TRANSITvSKYv4_SKY
-  subfolder: TEST/
+  name: TRANSITsky_v25fstd
+  subfolder: TEST_SKY_0603/
   seed: 12345 # For reproducibility
   run_dir: workspaces/${general.subfolder}${general.name}
   do_dataset_plots: False
