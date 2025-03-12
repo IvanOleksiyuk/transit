@@ -13,10 +13,7 @@ defaults:
   - experiment/TRANSITv25f_std_SKY@_global_
 
 step_train_template:
-  model:
-    reverse_pass_mode: additional_input
-    valid_plots: False
-    afterglow_epoch: 999999999
+  wandb_key: ${private.wandb_key}
 
 delete_existing_run_dir: False
 
@@ -29,8 +26,7 @@ do_cwola: False
 do_evaluate_cwola: False
 do_plot_compare: False
 
-
-verbose_validation: True
+verbose_validation: False
 
 general:
   name: TRANSITsky_v25fstd
@@ -38,3 +34,4 @@ general:
   seed: 12345 # For reproducibility
   run_dir: workspaces/${general.subfolder}${general.name}
   do_dataset_plots: False
+  

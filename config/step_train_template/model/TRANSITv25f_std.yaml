@@ -82,3 +82,5 @@ adversarial_cfg:
 
 valid_plots: ${verbose_validation}
 add_standardizing_layer: True
+reverse_pass_mode: additional_input
+afterglow_epoch: 999999999
