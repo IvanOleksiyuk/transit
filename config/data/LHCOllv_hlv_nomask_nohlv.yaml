@@ -1,3 +1,5 @@
+n_csts: 32
+
 template_training:
   _target_: transit.src.data.lhco_constituents.LHCOLowModuleTT
 
@@ -6,12 +8,14 @@ template_training:
   dataset:
     _target_: transit.src.data.lhco_constituents.LHCOLowDatasetTT
     _partial_: true
+    no_mask: true
     bkg_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_bkg.h5
     sig_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_sig.h5
     n_bkg: null
     n_sig: 3000
-    n_csts: 2
+    n_csts: ${data.n_csts}
     mjj_window: [[2700, 3300], [3700, 6000]]
+    hlvs: []
 
   loader_kwargs:
     pin_memory: true
@@ -27,13 +31,15 @@ export_template:
   dataset:
     _target_: transit.src.data.lhco_constituents.LHCOLowDatasetTT_export
     _partial_: true
+    no_mask: true
     bkg_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_bkg.h5
     sig_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_sig.h5
     hlv_gen_path: /home/users/o/oleksiyu/WORK/hyperproject/workspaces/2024_09_09/TRANSITv1_HLV/template/outputs/template_sample.h5
     n_bkg: null
     n_sig: 3000
-    n_csts: 2
+    n_csts: ${data.n_csts}
     mjj_window: [[2700, 3300], [3700, 6000]]
+    hlvs: []
 
   loader_kwargs:
     pin_memory: true

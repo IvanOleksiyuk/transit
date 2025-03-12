@@ -23,6 +23,7 @@ singularity exec --nv -B /home/users/,/srv,/tmp /srv/beegfs/scratch/groups/rodem
  do_transport_sideband=0\
  do_evaluation=1\
  step_evaluate.n_max_class_train=0"
+ 
 # Record the end time
 end_time=$(date +%s)
 echo "Job ended at: $(date)"

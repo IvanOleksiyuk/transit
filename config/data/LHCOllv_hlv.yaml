@@ -1,3 +1,5 @@
+n_csts: 32
+
 template_training:
   _target_: transit.src.data.lhco_constituents.LHCOLowModuleTT
 
@@ -10,7 +12,7 @@ template_training:
     sig_path: /srv/beegfs/scratch/groups/rodem/LHCO/lowlevel_sig.h5
     n_bkg: null
     n_sig: 3000
-    n_csts: 64
+    n_csts: ${data.n_csts}
     mjj_window: [[2700, 3300], [3700, 6000]]
 
   loader_kwargs:
@@ -32,7 +34,7 @@ export_template:
     hlv_gen_path: /home/users/o/oleksiyu/WORK/hyperproject/workspaces/2024_09_09/TRANSITv1_HLV/template/outputs/template_sample.h5
     n_bkg: null
     n_sig: 3000
-    n_csts: 64
+    n_csts: ${data.n_csts}
     mjj_window: [[2700, 3300], [3700, 6000]]
 
   loader_kwargs:

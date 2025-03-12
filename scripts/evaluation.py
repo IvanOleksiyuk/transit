@@ -9,25 +9,31 @@ from hydra.core.global_hydra import GlobalHydra
 
 from pathlib import Path
 import os
-from transit.src.utils.hydra_utils import instantiate_collection, log_hyperparameters, print_config, reload_original_config, save_config
+from transit.src.utils.hydra_utils import reload_original_config
 
 import pandas as pd
 import transit.src.utils.plotting as pltt
 import matplotlib.pyplot as plt
 import numpy as np
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 import torch
 from scipy.stats import pearsonr, spearmanr, kendalltau
 import pickle
-import dcor
 from transit.src.models.distance_correlation import DistanceCorrelation
-from transit.src.utils.hsic import HSIC_np, HSIC_torch
+from transit.src.utils.hsic import HSIC_torch
 from sklearn.model_selection import train_test_split
 import copy
 import wandb
 
 log = logging.getLogger(__name__)
+
+# Optional modules 
+try:
+    import dcor
+except ImportError:
+    dcor = None
+    log.warning("dcor module is not available. Distance correlation calculations will be skipped. (its non-essential only for diagnostics)")
 
 def to_np(inpt: Union[torch.Tensor, tuple]) -> np.ndarray:
     """More consicse way of doing all the necc steps to convert a pytorch
@@ -376,9 +382,9 @@ def evaluate_model(cfg, original_data, target_data, template_data):
     results.update({"max_abs_spearman": np.max(np.abs(spearman_correlations)), "min_abs_spearman": np.min(np.abs(spearman_correlations)), "mean_abs_spearman": np.mean(np.abs(spearman_correlations))})
     results["kernel_pearson"] = None
     results["hilbert_schmidt"] = HSIC_torch(e1, e2, cuda=False).detach().cpu().numpy()
-    results["DisCo"] = dcor.distance_correlation(to_np(e1), to_np(e2))
-    dcor_torch = DistanceCorrelation()
-    results["dcor_torch"] = dcor_torch(e1, e2)
+    results["DisCo"] = dcor.distance_correlation(to_np(e1), to_np(e2)) if dcor else None
+    dcor_torch = DistanceCorrelation() if dcor else None
+    results["dcor_torch"] = dcor_torch(e1, e2) if dcor else None
 
     # Do some fast calassification
     if getattr(cfg.step_evaluate.procedures, "lazy_predict", True):

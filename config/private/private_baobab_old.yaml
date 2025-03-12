@@ -1,5 +1,0 @@
-entity: ivan-oleksiyuk ### wandb entity
-output_dir: /srv/beegfs/scratch/groups/rodem/skycurtains/results/io
-image: /home/users/o/oleksiyu/WORK/skyCurtains.sif
-data_dir: /srv/beegfs/scratch/groups/rodem/skycurtains/gaiadump/patches_old/
-debugDAP: False
