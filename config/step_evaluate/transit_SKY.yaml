@@ -17,7 +17,8 @@ get_best: False
 do_2d_hist_instead_of_contour: True
 
 plot_contour_SB1toSB2transport: True
-plot_SKYclassifier_SB1toSB2transport: True
+closure_SKYclassifier_SBtoSB_transport: True
+closure_SKYclassifier_SBtoSR: True
 plot_everything_else: False
 
 procedures: null

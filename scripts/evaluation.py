@@ -165,7 +165,7 @@ def main(cfg):
                 save_name="SB1_to_SB2")
             log.info("Plotted SB1 to SB2 transport")
     
-    if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB_transport", True):
+    if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB_transport", False):
         from src.model.denseclassifier import run_classifier_folds
         
         SB1_data = data["target_for_SB1_data"].to_numpy()[:, :-1]
@@ -211,7 +211,7 @@ def main(cfg):
         wandb.log({"evaluation/sb2to1_AUC": auc_score_2to1})
         results["sb2to1_AUC"] = auc_score_2to1
         
-    if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", True):
+    if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", False):
         from src.model.denseclassifier import run_classifier_folds
         
         SR_data = data["target_data"].to_numpy()[:, :-1]
