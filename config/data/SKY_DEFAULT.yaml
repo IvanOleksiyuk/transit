@@ -3,9 +3,14 @@ resample_generate: False
 resample_eval: False
 training_batch_size: 2048
 
+# patch_id: patch_l198.00_b32.23
+# bins: [-13.186211, -7.1862106, -1.1862106, 4.8137894]
+# context: proper_motion_galactic_local_latitude
+
 patch_id: patch_l198.00_b32.23
-bins: [-13.186211, -7.1862106, -1.1862106, 4.8137894]
-context: proper_motion_galactic_local_latitude
+bins: [-10.566339, -4.5663385, 1.4336615, 7.4336615]
+context: proper_motion_galactic_local_longitude_cos_latitude
+
 feature_list:
   - latitude_galactic_local
   - longitude_galactic_local
@@ -91,23 +96,37 @@ export_SB2:
     pin_memory: False
     drop_last: False
 
-export_latent_all:
+export_SB1toSR:
   _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
-
   data_config:
     data_dir: ${private.data_dir} 
-    patch_id: patch_l198.00_b32.23
-    feature_list:
-      - latitude_galactic_local
-      - longitude_galactic_local
-      - color_bp_magnitude_minus_rp_magnitude
-      - magnitude_g_band_mean_integrated
-      - proper_motion_galactic_local_longitude_cos_latitude #make sure the proper motions are always last - because they are used for the split
-      - proper_motion_galactic_local_latitude
-    context: "proper_motion_galactic_local_latitude"
-    bins: [-13.186211, -7.1862106, -1.1862106, 4.8137894]
+    sample_bin: SR
+    patch_id: ${data.patch_id}
+    feature_list: ${data.feature_list}
+    context: ${data.context}
+    bins: ${data.bins}
     split_frac: 0.2
-    resample: ${data.resample_eval}
+    resample: ${data.resample_generate}
+    only_one_sb: "sb1"
+    minmax: True
+  load_config:
+    batch_size: 2048
+    num_workers: 16
+    pin_memory: False
+    drop_last: False
+
+export_SB2toSR:
+  _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
+  data_config:
+    data_dir: ${private.data_dir} 
+    sample_bin: SR
+    patch_id: ${data.patch_id}
+    feature_list: ${data.feature_list}
+    context: ${data.context}
+    bins: ${data.bins}
+    split_frac: 0.2
+    resample: ${data.resample_generate}
+    only_one_sb: "sb2"
     minmax: True
   load_config:
     batch_size: 2048

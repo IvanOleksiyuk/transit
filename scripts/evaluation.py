@@ -83,6 +83,7 @@ def reload_original_config(cfg: OmegaConf, get_best: bool = False) -> OmegaConf:
 )
 def main(cfg):
     log.info("Starting evaluation")
+    results = {}
     # Get two dataframes to compare
     Path(cfg.general.run_dir+"/plots/").mkdir(parents=True, exist_ok=True) 
     
@@ -164,7 +165,7 @@ def main(cfg):
                 save_name="SB1_to_SB2")
             log.info("Plotted SB1 to SB2 transport")
     
-    if getattr(cfg.step_evaluate, "plot_SKYclassifier_SB1toSB2transport", False):
+    if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB_transport", True):
         from src.model.denseclassifier import run_classifier_folds
         
         SB1_data = data["target_for_SB1_data"].to_numpy()[:, :-1]
@@ -184,7 +185,6 @@ def main(cfg):
             if len(SB2_gen)>n_max:
                 SB2_gen = SB2_gen[:n_max]
             
-            
         log.info("Starting classifier train/eval")
         auc_score_1to2, threshold, data_preds = run_classifier_folds(
             SB2_data, 
@@ -194,9 +194,9 @@ def main(cfg):
             return_threshold=False,  # if key == "sb12r" else False,
         )
         log.info("Finish classifier train/eval")
-        
-        log.info(f"sb1to2 vs sb2 AUC={auc_score_1to2}")
+        log.info(f"SB1toSB2 vs SB2 AUC={auc_score_1to2}")
         wandb.log({"evaluation/sb1to2_AUC": auc_score_1to2})
+        results["sb1to2_AUC"] = auc_score_1to2
         
         log.info("Starting classifier train/eval")
         auc_score_2to1, threshold, data_preds = run_classifier_folds(
@@ -207,8 +207,58 @@ def main(cfg):
             return_threshold=False,  # if key == "sb12r" else False,
         )
         log.info("Finish classifier train/eval")
-        log.info(f"sb1to2 vs sb2 AUC={auc_score_2to1}")
+        log.info(f"SB2toSB1 vs SB2 AUC={auc_score_2to1}")
         wandb.log({"evaluation/sb2to1_AUC": auc_score_2to1})
+        results["sb2to1_AUC"] = auc_score_2to1
+        
+    if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", True):
+        from src.model.denseclassifier import run_classifier_folds
+        
+        SR_data = data["target_data"].to_numpy()[:, :-1]
+        SB1toSR_gen = data["SB1toSR_gen_file"].to_numpy()[:, :-1]
+        SB2toSR_gen = data["SB2toSR_gen_file"].to_numpy()[:, :-1]
+        
+        # Limit the number of events to train the classifier on faster
+        n_max=cfg.step_evaluate.get("n_max_class_train", 10000)
+        if n_max is not None and n_max>0:
+            if len(SR_data)>n_max:
+                SR_data = SR_data[:n_max]
+            if len(SB1toSR_gen)>n_max:
+                SB1toSR_gen = SB1toSR_gen[:n_max]
+            if len(SB2toSR_gen)>n_max:
+                SB2toSR_gen = SB2toSR_gen[:n_max]
+            
+        log.info("Starting classifier train/eval")
+        auc_score_SB1toSR, threshold, data_preds = run_classifier_folds(
+            SB1toSR_gen, 
+            SR_data,
+            save_dir=Path(cfg.general.run_dir),
+            tag=f"sb1to2",
+            return_threshold=False,  # if key == "sb12r" else False,
+        )
+        log.info("Finish classifier train/eval")
+        
+        log.info(f"SB1toSR vs SR AUC={auc_score_SB1toSR}")
+        wandb.log({"evaluation/sb1to2_AUC": auc_score_SB1toSR})
+        results["sb1toSR_AUC"] = auc_score_SB1toSR
+        
+        log.info("Starting classifier train/eval")
+        auc_score_SB2toSR, threshold, data_preds = run_classifier_folds(
+            SB2toSR_gen, 
+            SR_data,
+            save_dir=Path(cfg.general.run_dir),
+            tag=f"sb2to1",
+            return_threshold=False,  # if key == "sb12r" else False,
+        )
+        log.info("Finish classifier train/eval")
+        log.info(f"SB2toSR vs SR AUC={auc_score_SB2toSR}")
+        wandb.log({"evaluation/auc_score_SB2toSR_AUC": auc_score_SB2toSR})
+        results["sb2toSR_AUC"] = auc_score_SB2toSR
+    
+    if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", True) and getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB2transport", True):
+        deb_score = ((auc_score_1to2+auc_score_2to1)*2+auc_score_SB1toSR+auc_score_SB2toSR)/6
+        log.info(f"deb_score={deb_score}")
+        wandb.log({"evaluation/deb_score": deb_score})
     
     with open(cfg.general.run_dir+"/template/evaluate_sbtosb.txt", "w") as f:
         f.write(f"n_max_class_train={n_max}\n")

@@ -9,6 +9,8 @@ defaults:
   - step_export_template: transit
   - step_export_SB1: default
   - step_export_SB2: default
+  - step_export_SB1toSR: default
+  - step_export_SB2toSR: default
   - step_evaluate: transit_SKY
   - experiment/TRANSITv25f_std_SKY@_global_
 

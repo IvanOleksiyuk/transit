@@ -9,17 +9,19 @@ defaults:
   - step_export_template: transit
   - step_export_SB1: default
   - step_export_SB2: default
+  - step_export_SB1toSR: default
+  - step_export_SB2toSR: default
   - step_evaluate: transit_SKY
   - experiment/TRANSITv25f_std_SKY@_global_
-  - override step_train_template/trainer: 5e_noclip.yaml
+  - override step_train_template/trainer: 1e_noclip.yaml
 
 
 step_train_template:
   wandb_key: ${private.wandb_key}
 
-delete_existing_run_dir: True
+delete_existing_run_dir: False
 
-do_train_template: True
+do_train_template: False
 do_export_template: True
 do_transport_sideband: True
 do_export_latent: False
@@ -32,7 +34,7 @@ verbose_validation: False
 
 general:
   name: TRANSITsky_v25fstd_debug
-  subfolder: TEST_SKY_2502/
+  subfolder: TEST_SKY_1703/
   seed: 12345 # For reproducibility
   run_dir: workspaces/${general.subfolder}${general.name}
   do_dataset_plots: False
