@@ -1,13 +1,12 @@
 seed: ${general.seed} 
-data: ${data.export_SB1} 
+data: ${data.export_SB2toSR} 
 
 paths:
   # output dir will be created by hydra
   full_path:  ${general.run_dir}/template
   output_dir:  ${general.run_dir}/template
 
-output_name: SB1_gen_sample
+output_name: SB2toSR_gen_sample
 
 get_best: false
-project_name: CATHODE_LHCO
 network_name: ${step_train_template.network_name}

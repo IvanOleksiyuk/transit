@@ -13,6 +13,8 @@ from omegaconf import DictConfig
 import numpy as np
 import pandas as pd
 import h5py
+import shutil
+import os
 log = logging.getLogger(__name__)
 
 def to_np(inpt: Union[T.Tensor, tuple]) -> np.ndarray:
@@ -78,8 +80,17 @@ def main(cfg: DictConfig) -> None:
             #del file["jet2_locals"]
             file.create_dataset("jet2_locals", data=jet2)
         
-        
     print(f"Saved template to {output_dir / f'{output_name}.h5'}")
+    
+    # Move or copy the file to another location if TRANSIT is a submodule of another project
+    if hasattr(cfg, "copy_to_path") and cfg.copy_to_path is not None:
+        Path(cfg.copy_to_path).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(output_dir / f"{output_name}.h5", cfg.copy_to_path)
+        print(f"Also copied to {cfg.copy_to_path}")
+    elif hasattr(cfg, "move_to_path") and cfg.move_to_path is not None:
+        Path(cfg.move_to_path).parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(output_dir / f"{output_name}.h5", cfg.move_to_path)
+        print(f"Also moved to {cfg.move_to_path}")
     
     
     

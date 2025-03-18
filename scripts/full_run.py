@@ -74,7 +74,7 @@ def update_runtime_file_func(file_path, text):
         file.write(f'{text}\n')
 
 @hydra.main(
-    version_base=None, config_path=str('../config'), config_name="TRANSITv0v1_LHCO_test_trXex"
+    version_base=None, config_path=str('../config'), config_name="TRANSITv0v1_LHCO_test_trXex_sky"
 )
 def main(cfg: DictConfig) -> None:
     log.info("<<<START FULL RUN>>>")
@@ -139,6 +139,10 @@ def main(cfg: DictConfig) -> None:
         name = cfg.step_export_template.output_name
         generate_teplate.main(cfg.step_export_SB1)
         generate_teplate.main(cfg.step_export_SB2)
+        if hasattr(cfg, "step_export_SB1toSR"):
+            generate_teplate.main(cfg.step_export_SB1toSR)
+        if hasattr(cfg, "step_export_SB2toSR"):
+            generate_teplate.main(cfg.step_export_SB2toSR)
         log.info(f"Finish: Generate a template dataset using the model. Time taken: {datetime.now() - start_time}")
         log.info("===================================")
         update_runtime_file('Generate sideband: {}\n'.format(datetime.now() - start_time))

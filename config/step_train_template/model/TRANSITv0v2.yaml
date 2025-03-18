@@ -87,3 +87,5 @@ adversarial_cfg:
   gradient_clip_val: 0.1
 
 valid_plots: ${verbose_validation}
+reverse_pass_mode: additional_input
+afterglow_epoch: 999999999

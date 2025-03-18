@@ -9,5 +9,4 @@ export_latent_all:
 
   output_name: export_latent_all
   get_best: false
-  project_name: CATHODE_LHCO
   network_name: ${step_train_template.network_name}

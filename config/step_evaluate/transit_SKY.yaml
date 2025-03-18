@@ -1,11 +1,15 @@
 data:
   original_data: ${data.export_template}
-  target_data: ${data.export_template}
+  target_data: ${data.eval_SR} # Updated to point to SR data
   template_file:  ${general.run_dir}/template/outputs/template_sample.h5
-  original_SB1_data: ${data.export_SB1}
-  original_SB2_data: ${data.export_SB2}
+  SB1toSR_gen_file: ${general.run_dir}/template/outputs/SB1toSR_gen_sample.h5
+  SB2toSR_gen_file: ${general.run_dir}/template/outputs/SB2toSR_gen_sample.h5
+  original_for_SB1_data: ${data.export_SB1}
+  original_for_SB2_data: ${data.export_SB2}
+  target_for_SB1_data: ${data.eval_SB1} 
+  target_for_SB2_data: ${data.eval_SB2} 
   SB1_gen_file: ${general.run_dir}/template/outputs/SB1_gen_sample.h5
-  SB2_gen_file: ${general.run_dir}/template/outputs/SB1_gen_sample.h5
+  SB2_gen_file: ${general.run_dir}/template/outputs/SB2_gen_sample.h5
 
 x_bounds: [null, null]
 debug_eval: False
@@ -13,7 +17,9 @@ get_best: False
 do_2d_hist_instead_of_contour: True
 
 plot_contour_SB1toSB2transport: True
-plot_classifier_SB1toSB2transport: True
+closure_SKYclassifier_SBtoSB_transport: True
+closure_SKYclassifier_SBtoSR: True
 plot_everything_else: False
 
 procedures: null
+n_max_class_train: 10000

@@ -1,10 +1,7 @@
 # @package _global_
 
 defaults:
-  - override /step_train_template/model: TRANSITvSKYv3.yaml
-
-data:
-  training_batch_size: 2048
+  - override /step_train_template/model: TRANSITvSKYv7.yaml
 
 step_train_template:
   model:
@@ -13,4 +10,4 @@ step_train_template:
     add_standardizing_layer: True
   do_scale_epochs: True
   trainer:
-    check_val_every_n_epoch: 1
+    check_val_every_n_epoch: 10

@@ -1,0 +1,12 @@
+seed: ${general.seed} 
+data: ${data.export_SB2} 
+
+paths:
+  # output dir will be created by hydra
+  full_path:  ${general.run_dir}/template
+  output_dir:  ${general.run_dir}/template
+
+output_name: SB2_gen_sample
+
+get_best: false
+network_name: ${step_train_template.network_name}

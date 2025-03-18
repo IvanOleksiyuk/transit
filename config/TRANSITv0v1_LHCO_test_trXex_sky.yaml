@@ -6,11 +6,11 @@ defaults:
   - data: LHCO_DEFAULT
   - step_train_template: transit_reco_adv
   - step_export_template: transit_LHCO
-  - step_export_SB1: transit_LHCO
-  - step_export_SB2: transit_LHCO
+  - step_export_SB1: default
+  - step_export_SB2: default
   - step_evaluate: transit_LHCO_fast
   - step_cwola: BDT_LHCO_allCWOLA
-  - step_export_latent: transit_LHCO
+  - step_export_latent: default
   - step_plot_compare: transit_LHCO
   - experiment/TRANSITv0v1_LHCO_test@_global_
 

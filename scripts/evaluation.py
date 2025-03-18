@@ -9,25 +9,31 @@ from hydra.core.global_hydra import GlobalHydra
 
 from pathlib import Path
 import os
-from transit.src.utils.hydra_utils import instantiate_collection, log_hyperparameters, print_config, reload_original_config, save_config
+from transit.src.utils.hydra_utils import reload_original_config
 
 import pandas as pd
 import transit.src.utils.plotting as pltt
 import matplotlib.pyplot as plt
 import numpy as np
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 import torch
 from scipy.stats import pearsonr, spearmanr, kendalltau
 import pickle
-import dcor
 from transit.src.models.distance_correlation import DistanceCorrelation
-from transit.src.utils.hsic import HSIC_np, HSIC_torch
+from transit.src.utils.hsic import HSIC_torch
 from sklearn.model_selection import train_test_split
 import copy
 import wandb
 
 log = logging.getLogger(__name__)
+
+# Optional modules 
+try:
+    import dcor
+except ImportError:
+    dcor = None
+    log.warning("dcor module is not available. Distance correlation calculations will be skipped. (its non-essential only for diagnostics)")
 
 def to_np(inpt: Union[torch.Tensor, tuple]) -> np.ndarray:
     """More consicse way of doing all the necc steps to convert a pytorch
@@ -77,12 +83,16 @@ def reload_original_config(cfg: OmegaConf, get_best: bool = False) -> OmegaConf:
 )
 def main(cfg):
     log.info("Starting evaluation")
+    results = {}
     # Get two dataframes to compare
     Path(cfg.general.run_dir+"/plots/").mkdir(parents=True, exist_ok=True) 
     
     with open(cfg.general.run_dir+"/template/wandb_id.txt", "r") as f:
         run_id = f.read().strip()
-    wandb.init(id=run_id, resume="allow")
+    try:
+        wandb.init(id=run_id, resume="allow")
+    except:
+        print("Could not resume wandb run")
     
     # Plot the transport from SB1 to SB2
     data = {} # a dictionary to store the data
@@ -127,13 +137,13 @@ def main(cfg):
         log.info("contour plot is done, in "+str(time.time()-time_start)+" seconds")
         
     if getattr(cfg.step_evaluate, "plot_contour_SB1toSB2transport", True):
-        if check_data_loaded(["original_SB1_data", "SB1_gen_file", "original_SB2_data"], data)!=[]:
-            print("Missing data: ", check_data_loaded(["original_SB1_data", "SB1_gen_file", "original_SB2_data"], data))
+        if check_data_loaded(["original_for_SB1_data", "SB1_gen_file", "original_for_SB2_data", "target_for_SB1_data", "target_for_SB2_data"], data)!=[]:
+            print("Missing data: ", check_data_loaded(["original_for_SB1_data", "SB1_gen_file", "original_for_SB2_data", "target_for_SB1_data", "target_for_SB2_data"], data))
         else:
             pltt.plot_feature_spread(
-                data["original_SB1_data"][variables].to_numpy(),
+                data["target_for_SB1_data"][variables].to_numpy(),
                 data["SB1_gen_file"][variables].to_numpy(),
-                original_data = data["original_SB2_data"][variables].to_numpy(),
+                original_data = data["original_for_SB1_data"][variables].to_numpy(),
                 feature_nms = variables,
                 save_dir=Path(cfg.general.run_dir+"/plots/"),
                 plot_mode=plot_mode,
@@ -141,10 +151,11 @@ def main(cfg):
                 x_bounds=cfg.step_evaluate.x_bounds or None,
                 tag = ["SB2", "SB1"],
                 save_name="SB2_to_SB1")
+            log.info("Plotted SB2 to SB1 transport")
             pltt.plot_feature_spread(
-                data["original_SB2_data"][variables].to_numpy(),
+                data["target_for_SB2_data"][variables].to_numpy(),
                 data["SB2_gen_file"][variables].to_numpy(),
-                original_data = data["original_SB1_data"][variables].to_numpy(),
+                original_data = data["original_for_SB2_data"][variables].to_numpy(),
                 feature_nms = variables,
                 save_dir=Path(cfg.general.run_dir+"/plots/"),
                 plot_mode=plot_mode,
@@ -152,34 +163,107 @@ def main(cfg):
                 x_bounds=cfg.step_evaluate.x_bounds or None,
                 tag = ["SB1", "SB2"],
                 save_name="SB1_to_SB2")
+            log.info("Plotted SB1 to SB2 transport")
     
-    if getattr(cfg.step_evaluate, "plot_SKYclassifier_SB1toSB2transport", False):
+    if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB_transport", False):
         from src.model.denseclassifier import run_classifier_folds
         
-        SB1_data = data["original_SB1_data"].to_numpy()[:, :-1]
-        SB2_data = data["original_SB2_data"].to_numpy()[:, :-1]
+        SB1_data = data["target_for_SB1_data"].to_numpy()[:, :-1]
         SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
+        SB2_data = data["target_for_SB2_data"].to_numpy()[:, :-1]
         SB2_gen = data["SB2_gen_file"].to_numpy()[:, :-1]
-        auc_score, threshold, data_preds = run_classifier_folds(
+        
+        # Limit the number of events to train the classifier on faster
+        n_max=cfg.step_evaluate.get("n_max_class_train", 10000)
+        if n_max is not None and n_max>0:
+            if len(SB1_data)>n_max:
+                SB1_data = SB1_data[:n_max]
+            if len(SB1_gen)>n_max:
+                SB1_gen = SB1_gen[:n_max]
+            if len(SB2_data)>n_max:
+                SB2_data = SB2_data[:n_max]
+            if len(SB2_gen)>n_max:
+                SB2_gen = SB2_gen[:n_max]
+            
+        log.info("Starting classifier train/eval")
+        auc_score_1to2, threshold, data_preds = run_classifier_folds(
             SB2_data, 
             SB2_gen,
             save_dir=Path(cfg.general.run_dir),
             tag=f"sb1to2",
             return_threshold=False,  # if key == "sb12r" else False,
         )
-        print(auc_score)
-        wandb.log({"evaluation/sb1to2_AUC": auc_score})
+        log.info("Finish classifier train/eval")
+        log.info(f"SB1toSB2 vs SB2 AUC={auc_score_1to2}")
+        wandb.log({"evaluation/sb1to2_AUC": auc_score_1to2})
+        results["sb1to2_AUC"] = auc_score_1to2
         
-        auc_score, threshold, data_preds = run_classifier_folds(
+        log.info("Starting classifier train/eval")
+        auc_score_2to1, threshold, data_preds = run_classifier_folds(
             SB1_data, 
             SB1_gen,
             save_dir=Path(cfg.general.run_dir),
             tag=f"sb2to1",
             return_threshold=False,  # if key == "sb12r" else False,
         )
-        data["SB1_gen_file"]
-        print(auc_score)
-        wandb.log({"evaluation/sb2to1_AUC": auc_score})
+        log.info("Finish classifier train/eval")
+        log.info(f"SB2toSB1 vs SB2 AUC={auc_score_2to1}")
+        wandb.log({"evaluation/sb2to1_AUC": auc_score_2to1})
+        results["sb2to1_AUC"] = auc_score_2to1
+        
+    if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", False):
+        from src.model.denseclassifier import run_classifier_folds
+        
+        SR_data = data["target_data"].to_numpy()[:, :-1]
+        SB1toSR_gen = data["SB1toSR_gen_file"].to_numpy()[:, :-1]
+        SB2toSR_gen = data["SB2toSR_gen_file"].to_numpy()[:, :-1]
+        
+        # Limit the number of events to train the classifier on faster
+        n_max=cfg.step_evaluate.get("n_max_class_train", 10000)
+        if n_max is not None and n_max>0:
+            if len(SR_data)>n_max:
+                SR_data = SR_data[:n_max]
+            if len(SB1toSR_gen)>n_max:
+                SB1toSR_gen = SB1toSR_gen[:n_max]
+            if len(SB2toSR_gen)>n_max:
+                SB2toSR_gen = SB2toSR_gen[:n_max]
+            
+        log.info("Starting classifier train/eval")
+        auc_score_SB1toSR, threshold, data_preds = run_classifier_folds(
+            SB1toSR_gen, 
+            SR_data,
+            save_dir=Path(cfg.general.run_dir),
+            tag=f"sb1to2",
+            return_threshold=False,  # if key == "sb12r" else False,
+        )
+        log.info("Finish classifier train/eval")
+        
+        log.info(f"SB1toSR vs SR AUC={auc_score_SB1toSR}")
+        wandb.log({"evaluation/auc_score_SB1toSR_AUC": auc_score_SB1toSR})
+        results["sb1toSR_AUC"] = auc_score_SB1toSR
+        
+        log.info("Starting classifier train/eval")
+        auc_score_SB2toSR, threshold, data_preds = run_classifier_folds(
+            SB2toSR_gen, 
+            SR_data,
+            save_dir=Path(cfg.general.run_dir),
+            tag=f"sb2to1",
+            return_threshold=False,  # if key == "sb12r" else False,
+        )
+        log.info("Finish classifier train/eval")
+        log.info(f"SB2toSR vs SR AUC={auc_score_SB2toSR}")
+        wandb.log({"evaluation/auc_score_SB2toSR_AUC": auc_score_SB2toSR})
+        results["sb2toSR_AUC"] = auc_score_SB2toSR
+    
+    if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", True) and getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB2transport", True):
+        deb_score = ((auc_score_1to2+auc_score_2to1)*2+auc_score_SB1toSR+auc_score_SB2toSR)/6
+        log.info(f"deb_score={deb_score}")
+        wandb.log({"evaluation/deb_score": deb_score})
+    
+    with open(cfg.general.run_dir+"/template/evaluate_sbtosb.txt", "w") as f:
+        f.write(f"n_max_class_train={n_max}\n")
+        f.write(f"sb1to2 vs sb2 AUC={auc_score_2to1}\n")
+        f.write(f"sb2to1 vs sb1 AUC={auc_score_1to2}\n")
 
     if getattr(cfg.step_evaluate, "plot_everything_else", True):
         evaluate_model(cfg, data["original_data"], data["target_data"], data["template_file"])
@@ -348,9 +432,9 @@ def evaluate_model(cfg, original_data, target_data, template_data):
     results.update({"max_abs_spearman": np.max(np.abs(spearman_correlations)), "min_abs_spearman": np.min(np.abs(spearman_correlations)), "mean_abs_spearman": np.mean(np.abs(spearman_correlations))})
     results["kernel_pearson"] = None
     results["hilbert_schmidt"] = HSIC_torch(e1, e2, cuda=False).detach().cpu().numpy()
-    results["DisCo"] = dcor.distance_correlation(to_np(e1), to_np(e2))
-    dcor_torch = DistanceCorrelation()
-    results["dcor_torch"] = dcor_torch(e1, e2)
+    results["DisCo"] = dcor.distance_correlation(to_np(e1), to_np(e2)) if dcor else None
+    dcor_torch = DistanceCorrelation() if dcor else None
+    results["dcor_torch"] = dcor_torch(e1, e2) if dcor else None
 
     # Do some fast calassification
     if getattr(cfg.step_evaluate.procedures, "lazy_predict", True):
