@@ -239,7 +239,7 @@ def main(cfg):
         log.info("Finish classifier train/eval")
         
         log.info(f"SB1toSR vs SR AUC={auc_score_SB1toSR}")
-        wandb.log({"evaluation/sb1to2_AUC": auc_score_SB1toSR})
+        wandb.log({"evaluation/auc_score_SB1toSR_AUC": auc_score_SB1toSR})
         results["sb1toSR_AUC"] = auc_score_SB1toSR
         
         log.info("Starting classifier train/eval")

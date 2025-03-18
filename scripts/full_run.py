@@ -74,7 +74,7 @@ def update_runtime_file_func(file_path, text):
         file.write(f'{text}\n')
 
 @hydra.main(
-    version_base=None, config_path=str('../config'), config_name="TRANSITsky_v25fstd_debug"
+    version_base=None, config_path=str('../config'), config_name="TRANSITv0v1_LHCO_test_trXex_sky"
 )
 def main(cfg: DictConfig) -> None:
     log.info("<<<START FULL RUN>>>")
