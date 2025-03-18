@@ -6,12 +6,11 @@ defaults:
   - data: PAD_DEFAULT
   - step_train_template: transitv_0v2
   - step_export_template: transit
-  - override /step_train_template/model: TRANSITv25f.yaml
+  - override /step_train_template/model: TRANSITv25f_std.yaml
 
 step_train_template:
   model:
     reverse_pass_mode: additional_input
-    input_type: sky_train
   do_scale_epochs: True
   trainer:
     check_val_every_n_epoch: 1
@@ -30,8 +29,8 @@ do_plot_compare: False
 verbose_validation: True
 
 general:
-  name: TRANSITsky_v25fstd
+  name: TRANSITpad_v25fstd
   seed: 12345 # For reproducibility
-  run_dir: /home/users/o/oleksiyu/WORK/weakly-supervised-search/user2/full_analysis_validation_1KHa12_v5/transit #workspaces/${general.subfolder}${general.name}
+  run_dir: /home/users/o/oleksiyu/WORK/weakly-supervised-search/full_analysis_sig_mock_test/transit #workspaces/${general.subfolder}${general.name}
   do_dataset_plots: False
   
