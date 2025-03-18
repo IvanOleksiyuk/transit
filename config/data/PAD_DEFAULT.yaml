@@ -1,0 +1,72 @@
+training_batch_size: 2048
+
+template_training:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data:
+    _target_: src.data.data.InMemoryDataMerge
+    dataset_list:
+      - _target_: src.data.data.InMemoryDataFrameDict
+        file_path: "${general.run_dir}/../data/data/sb.h5"
+        processor_cfg:
+          - _target_: src.data.process.ProcessorShuffle
+            random_state: ${general.seed}
+            add_seed: 1000
+          - _target_: src.data.process.ProcessorSplitOffDataFrameVars
+            frame_name: "data"
+            new_df_dict:
+              mass: ["m_jj"]
+      - _target_: src.data.data.InMemoryDataFrameDict
+        file_path: ["${general.run_dir}/../data/data/sb.h5", "${general.run_dir}/../data/data/sr.h5"]
+        processor_cfg:
+          - _target_: src.data.process.ProcessorShuffle
+            random_state: ${general.seed}
+            add_seed: 2000
+          - _target_: src.data.process.ProcessorSplitDataFrameVars
+            frame_name: "data"
+            new_df_dict:
+              mass_add: ["m_jj"]
+
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: true
+    persistent_workers: True
+
+
+
+# Please change everything that goes below!!!
+export_template:
+  _target_: data.data.SimpleDataModule
+  train_frac: 0.8
+  test_data:
+    _target_: src.data.data.InMemoryDataMerge
+    dataset_list:
+      - _target_: src.data.data.InMemoryDataFrameDict
+        file_path: "${general.run_dir}/../data/data/sb.h5"
+        processor_cfg:
+          - _target_: src.data.process.ProcessorShuffle
+            random_state: ${general.seed}
+            add_seed: 1000
+          - _target_: src.data.process.ProcessorSplitDataFrameVars
+            frame_name: "cond"
+            new_df_dict:
+              mass: ["m_jj"]
+      - _target_: src.data.data.InMemoryDataFrameDict
+        file_path: ["${general.run_dir}/../data/data/sb.h5", "${general.run_dir}/../data/data/sr.h5"]
+        processor_cfg:
+          - _target_: src.data.process.ProcessorShuffle
+            random_state: ${general.seed}
+            add_seed: 2000
+          - _target_: src.data.process.ProcessorSplitDataFrameVars
+            frame_name: "data"
+            new_df_dict:
+              mass_add: ["m_jj"]
+
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: true
+    persistent_workers: True
