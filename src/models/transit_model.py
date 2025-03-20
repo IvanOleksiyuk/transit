@@ -27,6 +27,7 @@ from transit.mattstools.mattstools.simple_transformers import TransformerEncoder
 from transit.mltools.modules import IterativeNormLayer
 from transit.mltools.torch_utils import get_sched, get_loss_fn
 from transit.mltools.mlp import MLP
+from transit.src.models.dequantization import SelectiveDequantizationTransform
 
 def to_np(inpt) -> np.ndarray:
     """More consicse way of doing all the necc steps to convert a pytorch
@@ -75,7 +76,8 @@ class TRANSIT(LightningModule):
         second_input_mask = False,
         total_skip = False,
         input_type = "default",
-        valid_plot_freq = 1
+        valid_plot_freq = 1,
+        dequantization_cfg = None,
     ) -> None:
         """
         Args:
@@ -160,6 +162,18 @@ class TRANSIT(LightningModule):
         if add_standardizing_layer:
             self.std_layer_x = IterativeNormLayer(x_dim)
             self.std_layer_ctxt = IterativeNormLayer(context_dim)
+            
+        if dequantization_cfg is not None:
+            self.do_dequantization = True
+            self.dequantization_layer = SelectiveDequantizationTransform(
+                dequantization_cfg["discrete_indices"], 
+                dequantization_cfg["discrete_shift"], 
+                dequantization_cfg["discrete_scale"]
+            )
+            print("Dequantization layer added")
+        else:
+            self.do_dequantization = False
+            self.dequantization_layer = None
         
         self.var_group_list = var_group_list
         self.reverse_pass_mode = reverse_pass_mode
@@ -264,6 +278,9 @@ class TRANSIT(LightningModule):
         #Make sure the inputs are in the right shape
         m_pair=m_pair.reshape([x_inp.shape[0], -1])
         m_add=m_add.reshape([x_inp.shape[0], -1])
+        
+        if self.do_dequantization:
+            x_inp = self.dequantization_layer(x_inp)
         
         if self.add_standardizing_layer:
             x_inp = self.std_layer_x(x_inp, mask=mask)
@@ -782,6 +799,9 @@ class TRANSIT(LightningModule):
     def generate(self, sample: tuple) -> torch.Tensor:
         x_inp, mask, y_pair, y_new = self.interprete_input(sample, phase="generate")
         
+        if self.do_dequantization:
+            x_inp = self.dequantization_layer(x_inp)
+        
         if self.add_standardizing_layer:
             x_inp = self.std_layer_x(x_inp)
             y_pair = self.std_layer_ctxt(y_pair)
@@ -797,6 +817,9 @@ class TRANSIT(LightningModule):
         
         if self.add_standardizing_layer:
             recon = self.std_layer_x.reverse(recon)
+        
+        if self.do_dequantization:
+            recon = self.dequantization_layer.inverse(recon)
         
         return recon
 

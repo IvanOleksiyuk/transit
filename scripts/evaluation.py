@@ -110,6 +110,11 @@ def main(cfg):
             if cfg.step_evaluate.data[key]["_target_"]=="transit.src.data.data.SimpleDataModule":
                 data[key].setup(stage="test")
                 data[key] = pd.concat([data[key].test_data.data["data"], data[key].test_data.data["mass_paired"]], axis=1)
+            if cfg.step_evaluate.data[key]["_target_"]=="src.data.data.SimpleDataModule":
+                data[key].setup(stage="test")
+                data[key] = pd.concat([data[key].test_data.data["data"], data[key].test_data.data["cond"]], axis=1)
+            if cfg.step_evaluate.data[key]["_target_"]=="src.data.data.InMemoryDataFrameDict":
+                data[key] = data[key].data["data"]
             log.info(f"Loaded data {key} with n={len(data[key])}, and vars {data[key].columns.tolist()}")    
     log.info("Data loaded")
     
@@ -255,15 +260,14 @@ def main(cfg):
         wandb.log({"evaluation/auc_score_SB2toSR_AUC": auc_score_SB2toSR})
         results["sb2toSR_AUC"] = auc_score_SB2toSR
     
-    if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", True) and getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB2transport", True):
+    if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", False) and getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB2transport", False):
         deb_score = ((auc_score_1to2+auc_score_2to1)*2+auc_score_SB1toSR+auc_score_SB2toSR)/6
         log.info(f"deb_score={deb_score}")
         wandb.log({"evaluation/deb_score": deb_score})
-    
-    with open(cfg.general.run_dir+"/template/evaluate_sbtosb.txt", "w") as f:
-        f.write(f"n_max_class_train={n_max}\n")
-        f.write(f"sb1to2 vs sb2 AUC={auc_score_2to1}\n")
-        f.write(f"sb2to1 vs sb1 AUC={auc_score_1to2}\n")
+        with open(cfg.general.run_dir+"/template/evaluate_sbtosb.txt", "w") as f:
+            f.write(f"n_max_class_train={n_max}\n")
+            f.write(f"sb1to2 vs sb2 AUC={auc_score_2to1}\n")
+            f.write(f"sb2to1 vs sb1 AUC={auc_score_1to2}\n")
 
     if getattr(cfg.step_evaluate, "plot_everything_else", True):
         evaluate_model(cfg, data["original_data"], data["target_data"], data["template_file"])

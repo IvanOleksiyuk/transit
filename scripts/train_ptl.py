@@ -9,7 +9,10 @@ import hydra
 import pytorch_lightning as pl
 import torch as T
 import math
+import pickle
 from omegaconf import DictConfig
+from pathlib import Path
+import sys
 
 from transit.src.utils.hydra_utils import instantiate_collection, log_hyperparameters, print_config, reload_original_config, save_config
 
@@ -67,6 +70,25 @@ def main(cfg: DictConfig) -> None:
     if hasattr(datamodule, "setup"):
         datamodule.setup(stage="fit")
     
+    # get info from the data module if there are quantized vars for padTRANSIT (very hacky solution but it works)
+    dequantization_cfg = None
+    if hasattr(cfg, "preprocessing_pkl"):
+        cwd = Path.cwd()
+        src_path = cwd / "src"
+        sys.path.append(str(src_path))
+        with open(cfg.preprocessing_pkl, "rb") as f:
+            preprocessor = pickle.load(f)
+            standardiser = preprocessor.features_preprocess.info
+            if hasattr(preprocessor, "discrete_indices"):
+                discrete_indices = preprocessor.discrete_indices
+                dequantization_cfg = {}
+                dequantization_cfg["discrete_indices"] = discrete_indices
+                dequantization_cfg["discrete_shift"] = standardiser[0, discrete_indices].numpy()
+                dequantization_cfg["discrete_scale"] = standardiser[1, discrete_indices].numpy()
+        root = pyrootutils.setup_root(search_from=__file__, pythonpath=True, cwd=True, indicator=".project-root")
+        sys.path.remove(str(src_path))
+        sys.path.append(str(cwd))
+        
     log.info("Scale N epochs with dataseize") #For very small datasets we have to scale the number of epochs
     if cfg.get("do_scale_epochs", False):
         train_data_length = len(datamodule.train_dataloader().dataset)
@@ -83,7 +105,7 @@ def main(cfg: DictConfig) -> None:
             update_sheduler_cfgs(cfg, epoch_scale)
     
     log.info("Instantiating the model")
-    model = hydra.utils.instantiate(cfg.model, inpt_dim=datamodule.get_dims(), var_group_list=datamodule.get_var_group_list(), seed=cfg.seed)
+    model = hydra.utils.instantiate(cfg.model, inpt_dim=datamodule.get_dims(), var_group_list=datamodule.get_var_group_list(), seed=cfg.seed, dequantization_cfg=dequantization_cfg)
     log.info(model)
 
     log.info("Saving config so job can be resumed")

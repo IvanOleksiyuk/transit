@@ -8,23 +8,28 @@ defaults:
   - step_export_template: transit
   - step_evaluate: transit_PAD
   - override /step_train_template/model: TRANSITv25f_std.yaml
-  #- override /step_train_template/trainer: 1e_noclip.yaml
 
 step_train_template:
   model:
     reverse_pass_mode: additional_input
   do_scale_epochs: True
+  afterglow_epoch: 15
   trainer:
     check_val_every_n_epoch: 1
   preprocessing_pkl: ${general.run_dir}/../data/data/preprocessor.pkl
+  
+  # preprocessing_done: 
+  #   _target_: src.data.process.ProcessorPileup
+  #   frame_name: "data"
+  #   load_pkl: ${general.run_dir}/../data/data/preprocessor.pkl
 
 delete_existing_run_dir: False
 
-do_train_template: True
+do_train_template: False
 do_export_template: True
 do_transport_sideband: False
 do_export_latent: False
-do_evaluation: True
+do_evaluation: False
 do_cwola: False
 do_evaluate_cwola: False
 do_plot_compare: False
@@ -34,6 +39,6 @@ verbose_validation: True
 general:
   name: TRANSITpad_v25fstd
   seed: 12345 # For reproducibility
-  run_dir: /transit #workspaces/${general.subfolder}${general.name}
+  run_dir: /home/users/o/oleksiyu/WORK/weakly-supervised-search/user_job_runs/full_analysis_validation_1KHa12_d1903/transit #workspaces/${general.subfolder}${general.name}
   do_dataset_plots: False
   

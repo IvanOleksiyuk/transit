@@ -1,0 +1,14 @@
+data:
+  original_data: ${data.export_template}
+  target_data: ${data.evaluation.target_data} # Updated to point to SR data
+  template_file:  ${general.run_dir}/template/outputs/template_sample.h5
+
+x_bounds: [null, null]
+debug_eval: False
+get_best: False
+do_2d_hist_instead_of_contour: True
+
+plot_everything_else: False
+
+procedures: null
+n_max_class_train: 10000
