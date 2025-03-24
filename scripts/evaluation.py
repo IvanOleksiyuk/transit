@@ -258,15 +258,19 @@ def main(cfg):
     if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", True) and getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB2transport", True):
         deb_score = ((auc_score_1to2+auc_score_2to1)*2+auc_score_SB1toSR+auc_score_SB2toSR)/6
         log.info(f"deb_score={deb_score}")
+        results["deb_score"] = deb_score
         wandb.log({"evaluation/deb_score": deb_score})
-    
-    with open(cfg.general.run_dir+"/template/evaluate_sbtosb.txt", "w") as f:
-        f.write(f"n_max_class_train={n_max}\n")
-        f.write(f"sb1to2 vs sb2 AUC={auc_score_2to1}\n")
-        f.write(f"sb2to1 vs sb1 AUC={auc_score_1to2}\n")
 
     if getattr(cfg.step_evaluate, "plot_everything_else", True):
-        evaluate_model(cfg, data["original_data"], data["target_data"], data["template_file"])
+        results = evaluate_model(cfg, data["original_data"], data["target_data"], data["template_file"], results=results)
+    
+    #Write out results
+    pickle.dump(results, open(plot_path+"results.pkl", "wb"))
+    with open(plot_path+"results.txt", "w") as f:
+        for key, value in results.items():
+            f.write(f"{key}: {value}\n")
+    for key, value in results.items():
+        print(key, value)
 
 
 def plot_matrix(matrix, title, vmin=-1, vmax=1, abs=False):
@@ -279,7 +283,7 @@ def plot_matrix(matrix, title, vmin=-1, vmax=1, abs=False):
     fig.colorbar(im, ax=ax)
     return fig, ax
 
-def evaluate_model(cfg, original_data, target_data, template_data):
+def evaluate_model(cfg, original_data, target_data, template_data, results={}):
 
     # define some plotting parameters
     scatter_alpha=1
@@ -452,12 +456,6 @@ def evaluate_model(cfg, original_data, target_data, template_data):
         results["template_max_lazy_Accuracy"] = np.max(models["Accuracy"])
         results["template_max_lazy_ROCAUC"] = np.max(models["ROC AUC"])
 
-    pickle.dump(results, open(plot_path+"results.pkl", "wb"))
-    with open(plot_path+"results.txt", "w") as f:
-        for key, value in results.items():
-            f.write(f"{key}: {value}\n")
-    for key, value in results.items():
-        print(key, value)
     w1 = batch1[0]
     w2 = batch1[1]
     
@@ -470,6 +468,8 @@ def evaluate_model(cfg, original_data, target_data, template_data):
             var_name="$\Delta m [GeV]$"
         _draw_event_transport_trajectories(model, plot_path, w1, w2, var=var, var_name=var_name, masses=np.linspace(3000, 4600, 1000), max_traj=20, processor=processor)
 
+    return results
+    
 def _draw_event_transport_trajectories(model, plot_path, w1_, m_pair_, var, var_name, masses=np.linspace(-2.5, 2.5, 126), max_traj=20, processor=None):
     if processor is not None:
         masses_true = copy.deepcopy(masses)
