@@ -241,11 +241,19 @@ class TRANSIT(LightningModule):
             return self.discriminator2(torch.cat([w1, w2], dim=1))
 
     def interprete_input(self, sample, phase="train"):
+        # Interpretation of input depends on the datamodule used for the training
         if self.second_input_mask:
             x_inp, mask, m_pair, m_add = sample
         elif self.input_type=="sky_train":
             if phase=="train":
                 x_inp, m_pair, m_add = sample[0][:, :-1], sample[0][:, -1:], sample[0][:, -1:]
+                mask = None
+            elif phase=="generate":
+                x_inp, m_pair, m_add = sample[0][:, :-1], sample[0][:, -1:], sample[2]
+                mask = None 
+        elif self.input_type=="sky_train_third_sampled":
+            if phase=="train":
+                x_inp, m_pair, m_add = sample[0][:, :-1], sample[0][:, -1:], sample[2]
                 mask = None
             elif phase=="generate":
                 x_inp, m_pair, m_add = sample[0][:, :-1], sample[0][:, -1:], sample[2]

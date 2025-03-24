@@ -23,3 +23,5 @@ plot_everything_else: False
 
 procedures: null
 n_max_class_train: 10000
+eval_classifier_model: BDT
+n_max: 0

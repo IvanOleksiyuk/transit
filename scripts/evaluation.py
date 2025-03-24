@@ -167,6 +167,12 @@ def main(cfg):
     
     if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB_transport", False):
         from src.model.denseclassifier import run_classifier_folds
+        from src.utils.cwola_utils import run_validation_BDT_folds
+        
+        if getattr(cfg.step_evaluate, "eval_classifier_model", "BDT")=="MLP":
+            run_cl_fd = run_classifier_folds
+        else:
+            run_cl_fd = run_validation_BDT_folds
         
         SB1_data = data["target_for_SB1_data"].to_numpy()[:, :-1]
         SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
@@ -186,7 +192,7 @@ def main(cfg):
                 SB2_gen = SB2_gen[:n_max]
             
         log.info("Starting classifier train/eval")
-        auc_score_1to2, threshold, data_preds = run_classifier_folds(
+        auc_score_1to2, threshold, data_preds = run_cl_fd(
             SB2_data, 
             SB2_gen,
             save_dir=Path(cfg.general.run_dir),
@@ -199,7 +205,7 @@ def main(cfg):
         results["sb1to2_AUC"] = auc_score_1to2
         
         log.info("Starting classifier train/eval")
-        auc_score_2to1, threshold, data_preds = run_classifier_folds(
+        auc_score_2to1, threshold, data_preds = run_cl_fd(
             SB1_data, 
             SB1_gen,
             save_dir=Path(cfg.general.run_dir),
@@ -210,9 +216,19 @@ def main(cfg):
         log.info(f"SB2toSB1 vs SB2 AUC={auc_score_2to1}")
         wandb.log({"evaluation/sb2to1_AUC": auc_score_2to1})
         results["sb2to1_AUC"] = auc_score_2to1
+        results["len_SB1_data"] = len(data["target_for_SB1_data"].to_numpy()[:, :-1])
+        results["len_SB2_data"] = len(data["target_for_SB2_data"].to_numpy()[:, :-1])
+        results["len_SB1_gen"] = len(data["SB1_gen_file"].to_numpy()[:, :-1])
+        results["len_SB2_gen"] = len(data["SB2_gen_file"].to_numpy()[:, :-1])
         
     if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", False):
         from src.model.denseclassifier import run_classifier_folds
+        from src.utils.cwola_utils import run_validation_BDT_folds
+        
+        if getattr(cfg.step_evaluate, "eval_classifier_model", "BDT")=="MLP":
+            run_cl_fd = run_classifier_folds
+        else:
+            run_cl_fd = run_validation_BDT_folds
         
         SR_data = data["target_data"].to_numpy()[:, :-1]
         SB1toSR_gen = data["SB1toSR_gen_file"].to_numpy()[:, :-1]
@@ -229,7 +245,7 @@ def main(cfg):
                 SB2toSR_gen = SB2toSR_gen[:n_max]
             
         log.info("Starting classifier train/eval")
-        auc_score_SB1toSR, threshold, data_preds = run_classifier_folds(
+        auc_score_SB1toSR, threshold, data_preds = run_cl_fd(
             SB1toSR_gen, 
             SR_data,
             save_dir=Path(cfg.general.run_dir),
@@ -243,7 +259,7 @@ def main(cfg):
         results["sb1toSR_AUC"] = auc_score_SB1toSR
         
         log.info("Starting classifier train/eval")
-        auc_score_SB2toSR, threshold, data_preds = run_classifier_folds(
+        auc_score_SB2toSR, threshold, data_preds = run_cl_fd(
             SB2toSR_gen, 
             SR_data,
             save_dir=Path(cfg.general.run_dir),
@@ -254,6 +270,9 @@ def main(cfg):
         log.info(f"SB2toSR vs SR AUC={auc_score_SB2toSR}")
         wandb.log({"evaluation/auc_score_SB2toSR_AUC": auc_score_SB2toSR})
         results["sb2toSR_AUC"] = auc_score_SB2toSR
+        results["len_SR_data"] = len(data["target_data"].to_numpy()[:, :-1])
+        results["len_SB1toSR_gen"] = len(data["SB1toSR_gen_file"].to_numpy()[:, :-1])
+        results["len_SB2toSR_gen"] = len(data["SB2toSR_gen_file"].to_numpy()[:, :-1])
     
     if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", True) and getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB2transport", True):
         deb_score = ((auc_score_1to2+auc_score_2to1)*2+auc_score_SB1toSR+auc_score_SB2toSR)/6
@@ -265,6 +284,7 @@ def main(cfg):
         results = evaluate_model(cfg, data["original_data"], data["target_data"], data["template_file"], results=results)
     
     #Write out results
+    plot_path=cfg.general.run_dir+"/plots/"
     pickle.dump(results, open(plot_path+"results.pkl", "wb"))
     with open(plot_path+"results.txt", "w") as f:
         for key, value in results.items():
