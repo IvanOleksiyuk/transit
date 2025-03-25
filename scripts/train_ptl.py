@@ -69,17 +69,18 @@ def main(cfg: DictConfig) -> None:
     
     log.info("Scale N epochs with dataseize") #For very small datasets we have to scale the number of epochs
     if cfg.get("do_scale_epochs", False):
+        batches_per_epoch_desired = cfg.get("batches_per_epoch_desired", 100)
         train_data_length = len(datamodule.train_dataloader().dataset)
         # get the batch size
         batch_size = datamodule.train_dataloader().batch_size
         # get the number of batches
         num_batches = train_data_length // batch_size
         if cfg.do_scale_epochs=="increase_only":
-            if num_batches < 100:
-                epoch_scale = 100 // num_batches
+            if num_batches < batches_per_epoch_desired:
+                epoch_scale = batches_per_epoch_desired // num_batches
                 update_sheduler_cfgs(cfg, epoch_scale)
         else:
-            epoch_scale = 100 / num_batches
+            epoch_scale = batches_per_epoch_desired / num_batches
             update_sheduler_cfgs(cfg, epoch_scale)
     
     log.info("Instantiating the model")

@@ -31,7 +31,7 @@ do_plot_compare: False
 verbose_validation: False
 
 general:
-  name: TRANSITsky_v25fstd
+  name: TRANSITsky_vSKYv1v1
   subfolder: TEST_SKY_0603/
   seed: 12345 # For reproducibility
   run_dir: workspaces/${general.subfolder}${general.name}

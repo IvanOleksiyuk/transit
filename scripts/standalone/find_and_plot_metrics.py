@@ -1,0 +1,106 @@
+import pickle
+import numpy as np
+import matplotlib.pyplot as plt
+from pathlib import Path
+
+def search_files(folder, target_name, target_extension):
+    """Recursively search for files with a specific name and extension."""
+    result_files = []
+    for path in Path(folder).rglob(f'{target_name}{target_extension}'):
+        result_files.append(path)
+    return result_files
+
+def load_pickle_files(file_paths):
+    """Load pickle files and store dictionaries in a new dictionary."""
+    data_dict = {}
+    for file_path in file_paths:
+        with open(file_path, 'rb') as f:
+            data = pickle.load(f)
+            # Construct the key from the parent.parent folder name
+            parent_folder = file_path.parent.parent.parent.parent.parent.name + '/' + file_path.parent.parent.parent.parent.name + '/' + file_path.parent.parent.parent.name
+            data_dict[parent_folder] = data
+    return data_dict
+
+def compute_metrics(data_dict, metric_name):
+    """Compute average, standard deviation, minimum, and maximum for a given metric."""
+    metrics = {}
+    metric_values = [data[metric_name] for data in data_dict.values()]
+    if metric_values:
+        metric_stats = {
+            'metric_values': metric_values,
+            'mean': np.mean(metric_values),
+            'std': np.std(metric_values),
+            'outliers': [value for value in metric_values if value < np.mean(metric_values) - np.std(metric_values) or value > np.mean(metric_values) + np.std(metric_values)]
+        }
+    return metric_stats
+
+def plot_metrics(metrics, metric_name, reference_name=None, display_all_points=False):
+    """Create an error bar plot with the computed metrics."""
+    keys = list(metrics.keys())
+    means = [metrics[key]['mean'] for key in keys]
+    stds = [metrics[key]['std'] for key in keys]
+    outliers = [metrics[key]['outliers'] for key in keys]
+    all_points = [metrics[key]['metric_values'] for key in keys]
+
+    plt.figure(figsize=(10, 6))
+    colors = plt.get_cmap('tab10', len(keys))
+
+    for i, key in enumerate(keys):
+        if display_all_points:
+            plt.scatter([key] * len(all_points[i]), all_points[i], color=colors(i), marker='o', label=f'{key} Points')
+        else:
+            plt.errorbar([key], [means[i]], yerr=[stds[i]], fmt='o', color=colors(i), label=f'{key} Mean ± Std')
+            plt.scatter([key] * len(outliers[i]), outliers[i], color=colors(i), marker='x', label=f'{key} Outliers')
+
+    if reference_name and not display_all_points:
+        if reference_name == 'min':
+            reference_key = keys[np.argmin(means)]
+        elif reference_name == 'max':
+            reference_key = keys[np.argmax(means)]
+        else:
+            reference_key = reference_name
+
+        if reference_key in metrics:
+            ref_mean = metrics[reference_key]['mean']
+            ref_std = metrics[reference_key]['std']
+            plt.axhline(ref_mean, color='black', linestyle='--', label=f'{reference_key} Mean')
+            plt.fill_between(keys, ref_mean - ref_std, ref_mean + ref_std, color='gray', alpha=0.2, label=f'{reference_key} ± Std')
+
+    plt.xlabel('Experiment')
+    plt.ylabel(metric_name)
+    plt.title(f'{metric_name} Metrics')
+    plt.legend()
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.grid(which='both', axis='y')
+    plt.savefig(f'{metric_name}.png')
+
+def main(folders, target_name, target_extension, metric_names, reference_name=None, display_all_points=False):
+    for metric_name in metric_names:
+        metrics = {}
+        for name, folder in folders.items():
+            file_paths = search_files(folder, target_name, target_extension)
+            data_dict = load_pickle_files(file_paths)
+            metrics[name] = compute_metrics(data_dict, metric_name)
+        plot_metrics(metrics, metric_name, reference_name, display_all_points)
+
+if __name__ == "__main__":
+    # import argparse
+    # parser = argparse.ArgumentParser(description='Find and plot metrics from pickle files.')
+    # parser.add_argument('folders', type=str, help='The root folders to search for files.')
+    # parser.add_argument('target_name', type=str, help='The target file name to search for.')
+    # parser.add_argument('target_extension', type=str, help='The target file extension to search for.')
+    # parser.add_argument('metric_name', type=str, help='The name of the metric to compute and plot.')
+    # parser.add_argument('--reference_name', type=str, help='The reference name for plotting.')
+    # parser.add_argument('--display_all_points', action='store_true', help='Display all points instead of mean, std, and outliers.')
+    # args = parser.parse_args()
+    # main(args.folders, args.target_name, args.target_extension, args.metric_name, args.reference_name, args.display_all_points)
+    main(folders={"transitsky1_bdt": "/home/users/o/oleksiyu/WORK/skycurtains/workspaces/transit_sky_dev/skyTransit/transitsky_bdteval1",
+                  "transitsky3_bdt": "/home/users/o/oleksiyu/WORK/skycurtains/workspaces/transit_sky_dev/skyTransit/transit_sky3",
+                  "transitsky2_bdt": "/home/users/o/oleksiyu/WORK/skycurtains/workspaces/transit_sky_dev/skyTransit/transit_sky2",
+                  },
+         target_name="results",
+         target_extension=".pkl",
+         metric_names=["deb_score", "sb1to2_AUC", "sb2to1_AUC", "len_SB1_data", "len_SB2_data"],
+         reference_name="min",
+         display_all_points=False)

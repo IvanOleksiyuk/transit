@@ -1,2 +1,2 @@
-data_dir: PLACEHOLDER #replace with data location
+data_dir: /srv/beegfs/scratch/groups/rodem/skycurtains/gaiadump/patches_with_cuts_applied/ #replace with data location
 wandb_key: PLACEHOLDER #replace with your key
