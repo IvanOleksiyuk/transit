@@ -17,19 +17,35 @@ import hydra
 from pathlib import Path
 import os
 from omegaconf import DictConfig, OmegaConf
-from transit.src.utils.hydra_utils import instantiate_collection, log_hyperparameters, print_config, reload_original_config, save_config
-import transit.scripts.evaluation as evaluation
-import transit.scripts.train_ptl as train_ptl
-import transit.scripts.generate_teplate as generate_teplate
-import transit.scripts.run_cwola as run_cwola
-import transit.scripts.cwola_evaluation as cwola_evaluation
-import transit.scripts.plot_compare as plot_compare
-import transit.scripts.export_latent_space as export_latent_space
-import transit.scripts.time_chart as time_chart
-import transit.scripts.check_close as check_close
-import transit.scripts.collect_metrics as collect_metrics
 from datetime import datetime
 import subprocess
+
+print("starting local imports")
+from transit.src.utils.hydra_utils import print_config, reload_original_config, save_config
+print("loaded hydra_utils")
+import transit.scripts.evaluation as evaluation
+print("loaded evaluation")
+import transit.scripts.train_ptl as train_ptl
+print("loaded train_ptl")
+import transit.scripts.train_ptl_manual as train_ptl_manual
+print("loaded train_ptl_manual")
+import transit.scripts.generate_teplate as generate_teplate
+print("loaded generate_teplate")
+import transit.scripts.run_cwola as run_cwola
+print("loaded run_cwola")
+import transit.scripts.cwola_evaluation as cwola_evaluation
+print("loaded cwola_evaluation")
+import transit.scripts.plot_compare as plot_compare
+print("loaded plot_compare")
+import transit.scripts.export_latent_space as export_latent_space
+print("loaded export_latent_space")
+import transit.scripts.time_chart as time_chart
+print("loaded time_chart")
+import transit.scripts.check_close as check_close
+print("loaded check_close")
+import transit.scripts.collect_metrics as collect_metrics
+print("done local imports")
+
 log = logging.getLogger(__name__)
 
 def get_git_hash(repo_dir=None):
@@ -117,7 +133,10 @@ def main(cfg: DictConfig) -> None:
         start_time = datetime.now()
         log.info("===================================")
         log.info(f"Start: Train a model that will provide us with a template")
-        train_ptl.main(cfg.step_train_template)
+        if cfg.get("manual_stear", False):
+            train_ptl_manual.main(cfg.step_train_template)
+        else:
+            train_ptl.main(cfg.step_train_template)
         log.info(f"Finish: Train a model that will provide us with a template. Time taken: {datetime.now() - start_time}")
         log.info(f"===================================")
         update_runtime_file('Train template: {}\n'.format(datetime.now() - start_time))
@@ -244,5 +263,5 @@ def main(cfg: DictConfig) -> None:
 
 if __name__ == "__main__":
     main()
-    
+
 

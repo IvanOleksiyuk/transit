@@ -69,7 +69,6 @@ def plot_metrics(metrics, metric_name, reference_name=None, display_all_points=F
     plt.xlabel('Experiment')
     plt.ylabel(metric_name)
     plt.title(f'{metric_name} Metrics')
-    plt.legend()
     plt.xticks(rotation=45)
     plt.tight_layout()
     plt.grid(which='both', axis='y')
@@ -95,9 +94,15 @@ if __name__ == "__main__":
     # parser.add_argument('--display_all_points', action='store_true', help='Display all points instead of mean, std, and outliers.')
     # args = parser.parse_args()
     # main(args.folders, args.target_name, args.target_extension, args.metric_name, args.reference_name, args.display_all_points)
-    main(folders={"transitsky1_bdt": "/home/users/o/oleksiyu/WORK/skycurtains/workspaces/transit_sky_dev/skyTransit/transitsky_bdteval1",
-                  "transitsky3_bdt": "/home/users/o/oleksiyu/WORK/skycurtains/workspaces/transit_sky_dev/skyTransit/transit_sky3",
-                  "transitsky2_bdt": "/home/users/o/oleksiyu/WORK/skycurtains/workspaces/transit_sky_dev/skyTransit/transit_sky2",
+    main(folders={
+                  #"transitsky1_bdt_before_cut": "/home/users/o/oleksiyu/WORK/skycurtains/workspaces/transit_sky_dev/skyTransit/transitsky_bdteval1",
+                  #"transitsky2_bdt_before_cut": "/home/users/o/oleksiyu/WORK/skycurtains/workspaces/transit_sky_dev/skyTransit/transit_sky2",
+                  #"transitsky3_bdt_before_cut": "/home/users/o/oleksiyu/WORK/skycurtains/workspaces/transit_sky_dev/skyTransit/transit_sky3",
+                  "transitsky1_bdt_after_cut": "/home/users/o/oleksiyu/WORK/skycurtains/workspaces/transit_sky_dev_cuts/skyTransit/transit_sky1_bdt",
+                  "transitsky2_bdt_after_cut": "/home/users/o/oleksiyu/WORK/skycurtains/workspaces/transit_sky_dev_cuts/skyTransit/transit_sky2_bdt",
+                  "transitsky3_bdt_after_cut": "/home/users/o/oleksiyu/WORK/skycurtains/workspaces/transit_sky_dev_cuts/skyTransit/transit_sky3_bdt",
+                  "transitsky4_bdt_after_cut": "/home/users/o/oleksiyu/WORK/skycurtains/workspaces/transit_sky_dev_cuts/skyTransit/transit_sky4_bdt",
+                  "transitsky5_bdt_after_cut": "/home/users/o/oleksiyu/WORK/skycurtains/workspaces/transit_sky_dev_cuts/skyTransit/transit_sky5_bdt",
                   },
          target_name="results",
          target_extension=".pkl",
