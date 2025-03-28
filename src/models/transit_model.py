@@ -225,7 +225,21 @@ class TRANSIT(LightningModule):
             return normalize(en)
         else:
             return en
-    
+
+    def get_latent(self, x_inp, m_pair, mask=None):
+        
+        #Make sure the inputs are in the right shape
+        m_pair=m_pair.reshape([x_inp.shape[0], -1])
+        
+        if self.do_dequantization:
+            x_inp = self.dequantization_layer(x_inp)
+        
+        if self.add_standardizing_layer:
+            x_inp = self.std_layer_x(x_inp, mask=mask)
+            m_pair = self.std_layer_ctxt(m_pair)
+        
+        return self.encode_content(x_inp, m_pair, mask=mask)
+
     def encode_style(self, m):
         en = self.encoder2(m)
         if self.latent_norm_enc2:

@@ -79,6 +79,17 @@ def main(cfg: DictConfig) -> None:
         with h5py.File(out_file, "a") as file:
             #del file["jet2_locals"]
             file.create_dataset("jet2_locals", data=jet2)
+
+    # Retain additional dataframes if specified in the config
+    if hasattr(cfg, "retain_dfs"):
+        log.info("Saving additional dataframes")
+        with pd.HDFStore(output_dir / f"{output_name}.h5", mode="a") as store:
+            for key in cfg.retain_dfs:
+                if key in datamodule.test_data.data:
+                    store.put(key, datamodule.test_data.data[key])
+                    log.info(f"Saved {key} to {output_dir / f'{output_name}.h5'}")
+                else:
+                    log.warning(f"Key {key} not found in test_dataset")
         
     print(f"Saved template to {output_dir / f'{output_name}.h5'}")
     

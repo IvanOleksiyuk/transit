@@ -1,0 +1,14 @@
+export_latent_all:
+  seed: ${general.seed} 
+  data: ${data.export_latent_sb} 
+
+  paths:
+    # output dir will be created by hydra
+    full_path:  ${general.run_dir}/template
+    output_dir:  ${general.run_dir}/export_latent
+
+  output_name: latransit_sb
+  get_best: false
+  network_name: ${step_train_template.network_name}
+  latent_df_key: "data"
+  retain_dfs: ["orig", "is_signal"]

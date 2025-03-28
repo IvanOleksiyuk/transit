@@ -54,7 +54,7 @@ def main(cfg: DictConfig) -> None:
     model.eval() #PL should do it but I just do it to be sure
     e1s = []
     for batch in datamodule.test_dataloader():
-        e1s.append(model.encode_content(batch[0].to(device), batch[1].to(device)))
+        e1s.append(model.get_latent(batch[0].to(device), batch[1].to(device)))
     vars = [f"e1_{i}" for i in range(e1s[0].shape[1])]
     dataset_dict = {var: T.hstack([o[:, i] for o in e1s]).detach().cpu().numpy() for i, var in enumerate(vars)}
     log.info("Saving outputs")
@@ -65,9 +65,20 @@ def main(cfg: DictConfig) -> None:
         output_name = cfg.output_name
     else:
         output_name = "latent_encoding"
-    df.to_hdf(output_dir / f"{output_name}.h5", key="latent", mode="w")
-    print(f"Saved template to {output_dir / f'{output_name}.h5'}")
-    
+
+    output_path = output_dir / f"{output_name}.h5"
+    df.to_hdf(output_path, key=cfg.get("latent_df_key", "latent"), mode="w")
+
+    if hasattr(cfg, "retain_dfs"):
+        log.info("Saving additional dataframes")
+        with pd.HDFStore(output_path, mode="a") as store:
+            for key in cfg.retain_dfs:
+                if key in datamodule.test_data.data:
+                    store.put(key, datamodule.test_data.data[key])
+                    log.info(f"Saved {key} to {output_path}")
+                else:
+                    log.warning(f"Key {key} not found in test_dataset")
+    print(f"Saved template to {output_path}")
 
 if __name__ == "__main__":
     main()

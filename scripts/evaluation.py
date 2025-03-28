@@ -98,7 +98,12 @@ def main(cfg):
     data = {} # a dictionary to store the data
     for key in cfg.step_evaluate.data:
         if "file" in key:
-            data[key] = pd.read_hdf(cfg.step_evaluate.data[key])
+            hdf_file = cfg.step_evaluate.data[key]
+            with pd.HDFStore(hdf_file, mode='r') as store:  # Ensure read-only mode
+                if len(store.keys()) > 1:
+                    data[key] = pd.read_hdf(hdf_file, key="data")
+                else:
+                    data[key] = pd.read_hdf(hdf_file)
             log.info(f"Loaded data {key} with n={len(data[key])}, and vars {data[key].columns.tolist()}")
         else:
             data[key] = hydra.utils.instantiate(cfg.step_evaluate.data[key])
@@ -139,6 +144,25 @@ def main(cfg):
             x_bounds=cfg.step_evaluate.x_bounds or None,
             tag = ["SB1, SB2", "SR"],
             save_name="SB2nSB1_to_SR")
+        log.info("contour plot is done, in "+str(time.time()-time_start)+" seconds")
+    if getattr(cfg.step_evaluate, "plot_contour_la_SBSR", True):
+        if cfg.step_evaluate.debug_eval:
+            plot_mode="diagnose"
+        else:
+            plot_mode=""
+        log.info("Starting contour plot "+plot_mode)
+        time_start = time.time()
+        pltt.plot_feature_spread(
+            data["laTM_file"].to_numpy(),
+            data["laSR_file"].to_numpy(),
+            original_data = data["laSB_file"].to_numpy(), #data["original_data"][variables].to_numpy(),
+            feature_nms = None,
+            save_dir=Path(cfg.general.run_dir)/ "plots/",
+            plot_mode=plot_mode,
+            do_2d_hist_instead_of_contour=cfg.step_evaluate.do_2d_hist_instead_of_contour,
+            x_bounds=cfg.step_evaluate.x_bounds or None,
+            tag = ["SB1, SB2", "SR"],
+            save_name="latent_SB_SR_TM")
         log.info("contour plot is done, in "+str(time.time()-time_start)+" seconds")
         
     if getattr(cfg.step_evaluate, "plot_contour_SB1toSB2transport", True):

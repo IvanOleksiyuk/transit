@@ -74,7 +74,6 @@ export_template:
             mass_add: ["m_jj"]
         - _target_: src.data.process.ProcessorKeepFrames
           frame_names_to_keep: ["mass_add"]
-
   loader_kwargs:
     pin_memory: true
     batch_size: ${data.training_batch_size}
@@ -95,4 +94,62 @@ evaluation:
       - _target_: src.data.process.ProcessorMergeFrames
         frame_names: ["data", "cond"]
         new_frame_name: "data"
+
         
+export_latent_sb:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data: null
+  test_data:
+    _target_: src.data.data.InMemoryDataFrameDict
+    list_order: ["data", "cond"]
+    file_path: "${general.run_dir}/../data/data/sb.h5"
+    plotting_path: "${general.run_dir}/../data/plots/sb"
+    processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 1000
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: false
+    persistent_workers: True
+
+export_latent_sr:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data: null
+  test_data:
+    _target_: src.data.data.InMemoryDataFrameDict
+    list_order: ["data", "cond"]
+    file_path: "${general.run_dir}/../data/data/sr.h5"
+    plotting_path: "${general.run_dir}/../data/plots/sr"
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: false
+    persistent_workers: True
+
+export_latent_tm:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data: null
+  test_data:
+    _target_: src.data.data.InMemoryDataFrameDict
+    list_order: ["data", "cond"]
+    file_path: ${general.run_dir}/template/outputs/template_sample.h5
+    plotting_path: "${general.run_dir}/../data/plots/tm"
+    processor_cfg:
+      - _target_: src.data.process.ProcessorSplitDataFrameVars
+        frame_name: "template"
+        new_df_dict:
+          cond: ["m_jj"]
+        rest_df: "data"
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: false
+    persistent_workers: True
