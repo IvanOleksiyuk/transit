@@ -554,16 +554,6 @@ class TRANSIT(LightningModule):
                 else:
                     total_loss2 = total_loss
                 
-                # DELETE THIS it is just for debugging
-                self.log("manual/g_loss_weight", self.adversarial_cfg.g_loss_weight)
-                self.log("manual/g_loss_gen_weight", self.adversarial_cfg.g_loss_gen_weight)
-                self.log("manual/loss_reco_w", self.loss_cfg.reco.w)
-                self.log("manual/loss_back_vec_w", self.loss_cfg.consistency_x.w)
-                lr_0 = self.trainer.lr_scheduler_configs[0].scheduler.get_last_lr()[0]
-                self.log("manual/lr_g", lr_0)
-                lr_1 = self.trainer.lr_scheduler_configs[1].scheduler.get_last_lr()[0]
-                self.log("manual/lr_d", lr_1)
-                
                 self.log("total_loss2", total_loss2, prog_bar=True)
                 self.zero_grad()
                 self.manual_backward(total_loss2)
@@ -721,7 +711,6 @@ class TRANSIT(LightningModule):
         """Configure the optimisers and learning rate sheduler for this
         model."""
         print("Configuring optimisers")
-        print(self.adversarial)
         if self.adversarial=="3optim_normal":
             enc2_params =  list(self.encoder2.parameters()) if hasattr(self.encoder2, "parameters") else []
             enc_dec_params = list(self.encoder1.parameters()) + enc2_params + list(self.decoder.parameters())

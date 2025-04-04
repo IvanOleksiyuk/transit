@@ -133,10 +133,7 @@ def main(cfg: DictConfig) -> None:
         start_time = datetime.now()
         log.info("===================================")
         log.info(f"Start: Train a model that will provide us with a template")
-        if cfg.get("manual_stear", False):
-            train_ptl_manual.main(cfg.step_train_template)
-        else:
-            train_ptl.main(cfg.step_train_template)
+        train_ptl.main(cfg.step_train_template)
         log.info(f"Finish: Train a model that will provide us with a template. Time taken: {datetime.now() - start_time}")
         log.info(f"===================================")
         update_runtime_file('Train template: {}\n'.format(datetime.now() - start_time))
