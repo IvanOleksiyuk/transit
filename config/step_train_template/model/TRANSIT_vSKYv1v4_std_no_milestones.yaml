@@ -64,20 +64,20 @@ adversarial_cfg:
   loss_function: "binary_cross_entropy"
   scheduler: 
     scheduler_g:
-      _target_: torch.optim.lr_scheduler.ConstantLR
+      _target_: torch.optim.lr_scheduler.MultiStepLR
       _partial_: True
-      total_iters: 100_000
-      factor: 1
+      milestones: [15]
+      gamma: 0.5
     scheduler_d:
-      _target_: torch.optim.lr_scheduler.ConstantLR
+      _target_: torch.optim.lr_scheduler.MultiStepLR
       _partial_: True
-      total_iters: 100_000
-      factor: 1
+      milestones: [35]
+      gamma: 0.5
     scheduler_d2:
-      _target_: torch.optim.lr_scheduler.ConstantLR
+      _target_: torch.optim.lr_scheduler.MultiStepLR
       _partial_: True
-      total_iters: 100_000
-      factor: 1
+      milestones: [55]
+      gamma: 0.5
   gradient_clip_val: 0.1
 
 valid_plots: ${verbose_validation}

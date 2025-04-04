@@ -6,7 +6,7 @@ model_checkpoint:
   mode: min
   save_last: True
   auto_insert_metric_name: False
-  save_weights_only: True
+  save_weights_only: False
 
 model_summary:
   _target_: pytorch_lightning.callbacks.RichModelSummary

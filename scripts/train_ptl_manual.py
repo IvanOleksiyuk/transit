@@ -50,8 +50,8 @@ def update_model_parameters(model, config_path):
     print("updating loss_cfg.consistency_x.w from ", model.loss_cfg.consistency_x.w, " to ", config['loss_weights']['consistency_x'])
     model.loss_cfg.consistency_x.w = config['loss_weights']['consistency_x']
     
-    model.adversarial_cfg.scheduler.scheduler_g.factor = config['lr_g']
-    model.adversarial_cfg.scheduler.scheduler_d.factor = config['lr_d']
+    #model.adversarial_cfg.scheduler.scheduler_g.factor = config['lr_g']
+    #model.adversarial_cfg.scheduler.scheduler_d.factor = config['lr_d']
     #model.adversarial_cfg.sheduler.sheduler_d2.base_lr = config['lr_d2']
     #trainer.lr_scheduler_configs[0].scheduler.base_lr = config['lr_g']
     #trainer.lr_scheduler_configs[2].scheduler.base_lr = config['lr_d']
@@ -146,7 +146,7 @@ def main(cfg: DictConfig) -> None:
         trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=loggers, max_epochs=next_epoch)
 
         # Train the model for the current chunk
-        trainer.fit(model, datamodule=datamodule) #, ckpt_path=checkpoint_path
+        trainer.fit(model, datamodule=datamodule)
         
         # Update the current epoch
         current_epoch = next_epoch
