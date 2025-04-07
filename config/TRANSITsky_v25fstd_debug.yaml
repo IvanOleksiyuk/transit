@@ -13,7 +13,7 @@ defaults:
   - step_export_SB2toSR: default
   - step_evaluate: transit_SKY
   - experiment/TRANSITv25f_std_SKY@_global_
-  - override step_train_template/trainer: 1e_noclip.yaml
+  - override step_train_template/trainer: 5e_noclip.yaml
 
 
 step_train_template:

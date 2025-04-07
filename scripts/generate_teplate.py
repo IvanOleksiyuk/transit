@@ -68,6 +68,21 @@ def main(cfg: DictConfig) -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
         df = pd.DataFrame({k:v.reshape(-1) for k, v in dataset_dict.items()})
         df.to_hdf(output_dir / f"{output_name}.h5", key="template", mode="w")
+        
+        # Save using h5py if save_with_h5py is enabled
+        if hasattr(cfg, "save_to_path_with_h5py") and cfg.save_to_path_with_h5py:
+            column_names = model.var_group_list[0] + model.var_group_list[1]
+            # Combine all variables into a single array
+            combined_data = np.column_stack([dataset_dict[var].reshape(-1) for var in column_names])
+            # Save the combined data using h5py
+            h5py_output_path = Path(cfg.save_to_path_with_h5py)
+            h5py_output_path.parent.mkdir(parents=True, exist_ok=True)
+            with h5py.File(h5py_output_path, "w") as f:
+                # Save the combined data
+                dset = f.create_dataset("output_data", data=combined_data)
+                # Add metadata with column names
+                dset.attrs["columns"] = ",".join(column_names)
+            print(f"Saved template using h5py to {h5py_output_path}")
     else:
         all = T.vstack([o for o in outputs]).numpy()
         jet1 = all[: len(all) // 2] 
