@@ -41,4 +41,7 @@ general:
   seed: 12345 # For reproducibility
   run_dir: workspaces/${general.subfolder}${general.name}
   do_dataset_plots: False
-  
+
+# Configs that are duplicated in a different location just to make sure that retrieve_details in cwola step of the SKY pipeline works
+datamodule: ${data.template_training}
+save_config_to_parent: True

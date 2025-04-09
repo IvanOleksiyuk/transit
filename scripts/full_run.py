@@ -125,6 +125,8 @@ def main(cfg: DictConfig) -> None:
     os.makedirs(cfg.step_train_template.paths.full_path, exist_ok=True)
     #print_config(cfg)
     OmegaConf.save(cfg, Path(cfg.general.run_dir, "full_config.yaml"), resolve=True)
+    if cfg.get("save_config_to_parent", False):
+        OmegaConf.save(cfg, Path(cfg.general.run_dir, "..", "full_config.yaml"), resolve=True)
 
     # run all the steps
     if cfg.get("do_train_template", False):

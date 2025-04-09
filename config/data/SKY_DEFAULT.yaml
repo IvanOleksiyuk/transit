@@ -21,7 +21,6 @@ feature_list:
 
 template_training:
   _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
-
   data_config:
     data_dir: ${private.data_dir} 
     patch_id: ${data.patch_id}
