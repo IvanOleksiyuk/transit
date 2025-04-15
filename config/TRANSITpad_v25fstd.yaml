@@ -28,7 +28,7 @@ do_cwola: False
 do_evaluate_cwola: False
 do_plot_compare: False
 
-verbose_validation: True
+verbose_validation: False
 
 general:
   name: TRANSITpad_v25fstd
