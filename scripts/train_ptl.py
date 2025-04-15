@@ -13,6 +13,7 @@ import pickle
 from omegaconf import DictConfig
 from pathlib import Path
 import sys
+import os
 
 from transit.src.utils.hydra_utils import instantiate_collection, log_hyperparameters, print_config, reload_original_config, save_config
 
