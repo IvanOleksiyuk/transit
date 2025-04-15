@@ -44,8 +44,12 @@ def update_sheduler_cfgs(cfg, epoch_scale):
 def main(cfg: DictConfig) -> None:
     if cfg.get("wandb_key", False):
         wandb_key = cfg.wandb_key
-    else:
+    elif cfg.get("paths", False) and cfg.paths.get("wandbkey", False):
         wandb_key = open(cfg.paths.wandbkey, "r").read()
+    else:
+        wandb_key = None
+    log.info("Wandb key: %s", wandb_key)
+    
     wandb.login(key=wandb_key)
     run_id = wandb.util.generate_id()
     wandb.init(project=cfg.project_name, id=run_id, name=cfg.network_name, resume="allow")

@@ -4,7 +4,7 @@ data:
   template_file:  ${general.run_dir}/template/outputs/template_sample.h5
   laSB_file: ${general.run_dir}/template/outputs/latransit_sb.h5
   laSR_file: ${general.run_dir}/template/outputs/latransit_sr.h5
-  laTM_file: ${general.run_dir}/template/outputs/latransit_tm.h5
+  #laTM_file: ${general.run_dir}/template/outputs/latransit_tm.h5
 
 x_bounds: [null, null]
 debug_eval: False

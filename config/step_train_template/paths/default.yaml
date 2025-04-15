@@ -3,4 +3,4 @@ output_dir:  ${general.run_dir}/template
 # Interpolated
 root_dir: ${oc.env:PROJECT_ROOT}
 full_path: ${general.run_dir}/template
-wandbkey: ${path.wandbkey}
+#wandbkey: ${path.wandbkey}
