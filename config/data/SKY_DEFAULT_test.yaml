@@ -1,5 +1,5 @@
 template_training:
-  _target_: src.data.gdr3_dataclasses.GDR3DataModuleTop
+  _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
 
   data_config:
     data_dir: /srv/beegfs/scratch/groups/rodem/skycurtains/gaiadump/patches/

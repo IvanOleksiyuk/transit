@@ -102,7 +102,7 @@ def main(cfg):
             log.info(f"Loaded data {key} with n={len(data[key])}, and vars {data[key].columns.tolist()}")
         else:
             data[key] = hydra.utils.instantiate(cfg.step_evaluate.data[key])
-            if cfg.step_evaluate.data[key]["_target_"]=="src.data.gdr3_dataclasses.GDR3DataModuleTop":
+            if cfg.step_evaluate.data[key]["_target_"]=="skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop":
                 data[key].setup(stage="test")
                 data[key] = pd.DataFrame(data[key].test_dataset[:][0], columns=data[key].get_features_all())
             if cfg.step_evaluate.data[key]["_target_"]=="transit.src.data.data.InMemoryDataFrameDict":
@@ -166,8 +166,8 @@ def main(cfg):
             log.info("Plotted SB1 to SB2 transport")
     
     if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB_transport", False):
-        from src.model.denseclassifier import run_classifier_folds
-        from src.utils.cwola_utils import run_validation_BDT_folds
+        from skycurtains.model.denseclassifier import run_classifier_folds
+        from skycurtains.utils.cwola_utils import run_validation_BDT_folds
         
         if getattr(cfg.step_evaluate, "eval_classifier_model", "BDT")=="MLP":
             run_cl_fd = run_classifier_folds
@@ -222,8 +222,8 @@ def main(cfg):
         results["len_SB2_gen"] = len(data["SB2_gen_file"].to_numpy()[:, :-1])
         
     if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", False):
-        from src.model.denseclassifier import run_classifier_folds
-        from src.utils.cwola_utils import run_validation_BDT_folds
+        from skycurtains.model.denseclassifier import run_classifier_folds
+        from skycurtains.utils.cwola_utils import run_validation_BDT_folds
         
         if getattr(cfg.step_evaluate, "eval_classifier_model", "BDT")=="MLP":
             run_cl_fd = run_classifier_folds
