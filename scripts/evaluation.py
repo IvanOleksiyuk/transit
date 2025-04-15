@@ -87,9 +87,9 @@ def main(cfg):
     # Get two dataframes to compare
     Path(cfg.general.run_dir+"/plots/").mkdir(parents=True, exist_ok=True) 
     
-    with open(cfg.general.run_dir+"/template/wandb_id.txt", "r") as f:
-        run_id = f.read().strip()
     try:
+        with open(cfg.general.run_dir+"/template/wandb_id.txt", "r") as f:
+            run_id = f.read().strip()
         wandb.init(id=run_id, resume="allow")
     except:
         print("Could not resume wandb run")

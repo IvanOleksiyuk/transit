@@ -59,11 +59,12 @@ def main(cfg: DictConfig) -> None:
         wandb.login(key=wandb_key)
         run_id = wandb.util.generate_id()
         wandb.init(project=cfg.project_name, id=run_id, name=cfg.network_name, resume="allow")
+        with open(cfg.paths.full_path+"/wandb_id.txt", "w") as f:
+            f.write(run_id)
     else:
         print("WANDB_KEY not set. Skipping wandb login.")
     
-    with open(cfg.paths.full_path+"/wandb_id.txt", "w") as f:
-        f.write(run_id)
+
     
     log.info("Setting up full job config")
     if cfg.full_resume:
