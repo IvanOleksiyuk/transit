@@ -42,17 +42,25 @@ def update_sheduler_cfgs(cfg, epoch_scale):
     version_base=None, config_path=str('../config'), config_name="train"
 )
 def main(cfg: DictConfig) -> None:
+    
+    wandb_key = None
     if cfg.get("wandb_key", False):
         wandb_key = cfg.wandb_key
     elif cfg.get("paths", False) and cfg.paths.get("wandbkey", False):
         wandb_key = open(cfg.paths.wandbkey, "r").read()
     else:
-        wandb_key = None
-    log.info("Wandb key: %s", wandb_key)
+        try:
+            wandb_key = os.getenv("WANDB_KEY")
+        except Exception as e:
+            print(f"Failed to get wandb key: {e}. Skipping.")
     
-    wandb.login(key=wandb_key)
-    run_id = wandb.util.generate_id()
-    wandb.init(project=cfg.project_name, id=run_id, name=cfg.network_name, resume="allow")
+    if wandb_key:
+        wandb.login(key=wandb_key)
+        run_id = wandb.util.generate_id()
+        wandb.init(project=cfg.project_name, id=run_id, name=cfg.network_name, resume="allow")
+    else:
+        print("WANDB_KEY not set. Skipping wandb login.")
+    
     with open(cfg.paths.full_path+"/wandb_id.txt", "w") as f:
         f.write(run_id)
     
