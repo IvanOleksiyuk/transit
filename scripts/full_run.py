@@ -9,40 +9,50 @@
 # 5 - evaluate the performance and plot the results
 # 6 - produce a set of final plots and tables for one run
 
+
+print("Starting full_run.py")
+from datetime import datetime
+total_start_time = datetime.now()
+print("datetime.now()", total_start_time)
+
 import pyrootutils
 root = pyrootutils.setup_root(search_from=__file__, pythonpath=True, cwd=True, indicator=".project-root")
+print(f"Root directory: {root}", datetime.now())
 
+print("Global imports started", datetime.now())
 import logging
 import hydra
 from pathlib import Path
 import os
 from omegaconf import DictConfig, OmegaConf
-from datetime import datetime
 import subprocess
+print("Global imports done", datetime.now())
 
-print("starting local imports")
+print("starting local imports", datetime.now())
 from transit.src.utils.hydra_utils import print_config, reload_original_config, save_config
-print("loaded hydra_utils")
+print("loaded hydra_utils", datetime.now())
 import transit.scripts.evaluation as evaluation
-print("loaded evaluation")
+print("loaded evaluation", datetime.now())
 import transit.scripts.train_ptl as train_ptl
-print("loaded train_ptl")
+print("loaded train_ptl", datetime.now())
 import transit.scripts.generate_teplate as generate_teplate
-print("loaded generate_teplate")
+print("loaded generate_teplate", datetime.now())
 import transit.scripts.run_cwola as run_cwola
-print("loaded run_cwola")
+print("loaded run_cwola", datetime.now())
 import transit.scripts.cwola_evaluation as cwola_evaluation
-print("loaded cwola_evaluation")
+print("loaded cwola_evaluation", datetime.now())
 import transit.scripts.plot_compare as plot_compare
-print("loaded plot_compare")
+print("loaded plot_compare", datetime.now())
 import transit.scripts.export_latent_space as export_latent_space
-print("loaded export_latent_space")
+print("loaded export_latent_space", datetime.now())
 import transit.scripts.time_chart as time_chart
-print("loaded time_chart")
+print("loaded time_chart", datetime.now())
 import transit.scripts.check_close as check_close
-print("loaded check_close")
+print("loaded check_close", datetime.now())
 import transit.scripts.collect_metrics as collect_metrics
-print("done local imports")
+print("done local imports", datetime.now())
+
+imports_timestamp = datetime.now()
 
 log = logging.getLogger(__name__)
 
@@ -108,13 +118,15 @@ def main(cfg: DictConfig) -> None:
     os.makedirs(summary_dir, exist_ok=True)
     rutime_file = summary_dir / "runtime.txt"    
 
-    do_update_runtime_file = cfg.get("do_update_runtime_file", False)
+    do_update_runtime_file = cfg.get("do_update_runtime_file", True)
     if do_update_runtime_file:
         with open(rutime_file, 'w') as file:
             file.write('Start time: {}\n'.format(datetime.now()))
         update_runtime_file = lambda text: update_runtime_file_func(rutime_file, text)
     else:
         update_runtime_file = lambda text: None
+    
+    update_runtime_file("Imports time: {}".format(datetime.now() - imports_timestamp))
     
     # Save git hash to a file
     git_hash_file = summary_dir / "git_hash.txt"

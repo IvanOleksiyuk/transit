@@ -10,6 +10,8 @@ import pytorch_lightning as pl
 import torch as T
 import math
 from omegaconf import DictConfig
+from pathlib import Path
+import os
 
 from transit.src.utils.hydra_utils import instantiate_collection, log_hyperparameters, print_config, reload_original_config, save_config
 
@@ -38,17 +40,35 @@ def update_sheduler_cfgs(cfg, epoch_scale):
 @hydra.main(
     version_base=None, config_path=str('../config'), config_name="train"
 )
-def main(cfg: DictConfig) -> None:
+def main(cfg: DictConfig, update_runtime_file_lambda=None) -> None:
+    
+    wandb_key = None
     if cfg.get("wandb_key", False):
         wandb_key = cfg.wandb_key
-    else:
+    elif cfg.get("paths", False) and cfg.paths.get("wandbkey", False):
         wandb_key = open(cfg.paths.wandbkey, "r").read()
-    wandb.login(key=wandb_key)
-    run_id = wandb.util.generate_id()
-    wandb.init(project=cfg.project_name, id=run_id, name=cfg.network_name, resume="allow")
-    with open(cfg.paths.full_path+"/wandb_id.txt", "w") as f:
-        f.write(run_id)
+    else:
+        try:
+            wandb_key = os.getenv("WANDB_KEY")
+        except Exception as e:
+            print(f"Failed to get wandb key: {e}. Skipping.")
     
+    # Measure WandB connection time
+    wandb_start_time = time.time()
+    if wandb_key:
+        wandb.login(key=wandb_key)
+        run_id = wandb.util.generate_id()
+        wandb.init(project=cfg.project_name, id=run_id, name=cfg.network_name, resume="allow", 
+                   tags=cfg.tags if cfg.tags else None)
+        with open(cfg.paths.full_path+"/wandb_id.txt", "w") as f:
+            f.write(run_id)
+    else:
+        print("WANDB_KEY not set. Skipping wandb login.")
+    wandb_end_time = time.time()
+    wandb_elapsed_time = wandb_end_time - wandb_start_time
+    if update_runtime_file_lambda:
+        update_runtime_file_lambda(f"  WandB connection time: {wandb_elapsed_time:.2f} seconds")
+
     log.info("Setting up full job config")
     if cfg.full_resume:
         cfg = reload_original_config(cfg)
@@ -62,11 +82,17 @@ def main(cfg: DictConfig) -> None:
         log.info(f"Setting matrix precision to: {cfg.precision}")
         T.set_float32_matmul_precision(cfg.precision)
 
+    # Measure data loading time
+    data_loading_start_time = time.time()
     log.info("Instantiating the data module")
     datamodule = hydra.utils.instantiate(cfg.data.datamodule)
     if hasattr(datamodule, "setup"):
         datamodule.setup(stage="fit")
-    
+    data_loading_end_time = time.time()
+    data_loading_elapsed_time = data_loading_end_time - data_loading_start_time
+    if update_runtime_file_lambda:
+        update_runtime_file_lambda(f"  Data loading time: {data_loading_elapsed_time:.2f} seconds")
+        
     log.info("Scale N epochs with dataseize") #For very small datasets we have to scale the number of epochs
     if cfg.get("do_scale_epochs", False):
         batches_per_epoch_desired = cfg.get("batches_per_epoch_desired", 100)
@@ -99,9 +125,9 @@ def main(cfg: DictConfig) -> None:
     log.info("Instantiating the trainer")
     trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=loggers)
 
+    # Measure training time
     log.info("Starting training!")
-    start_time = time.time()
-    
+    training_start_time = time.time()
     if cfg.compile:
         log.info(f"Compiling the model using torch 2.0: {cfg.compile}")
         model = T.compile(model, mode=cfg.compile)
@@ -111,8 +137,12 @@ def main(cfg: DictConfig) -> None:
         log_hyperparameters(cfg, model, trainer)
 
     trainer.fit(model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)
-    end_time = time.time()
-    elapsed_time = end_time - start_time
+    training_end_time = time.time()
+    training_elapsed_time = training_end_time - training_start_time
+    if update_runtime_file_lambda:
+        update_runtime_file_lambda(f"  Model training time: {training_elapsed_time:.2f} seconds")
+
+    elapsed_time = training_end_time - wandb_start_time
     print(f"Total trainng time: {elapsed_time:.2f} seconds")
     formatted_time = f"Execution Time: {elapsed_time:.2f} seconds\n"
 

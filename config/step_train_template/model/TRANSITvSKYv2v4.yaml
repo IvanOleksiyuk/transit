@@ -12,10 +12,9 @@ encoder_cfg:
   act_h: silu
   act_i: none
   nrm: none
-  hddn_dim: 64
-  drp: 0.4
+  hddn_dim: 128
   num_blocks: 3
-  n_lyr_pbk: 2
+  n_lyr_pbk: 3
   do_res: True
   scale_output_hidden: 1.0
   ctxt_in_inpt: True
@@ -27,10 +26,9 @@ decoder_cfg:
   act_h: silu
   act_i: none
   nrm: none
-  hddn_dim: 64
-  drp: 0.4
+  hddn_dim: 128
   num_blocks: 3
-  n_lyr_pbk: 2
+  n_lyr_pbk: 3
   do_res: True
   scale_output_hidden: 1.0
   ctxt_in_inpt: True
@@ -50,12 +48,11 @@ adversarial_cfg:
     _target_: transit.mltools.mlp.MLP
     _partial_: true
     outp_dim: 1
-    hddn_dim: [64, 64, 64]
+    hddn_dim: [64, 64, 64, 64]
     ctxt_in_hddn: True
     ctxt_in_inpt: True
     act_h: "prelu"
     act_o: "sigmoid"
-    drp: 0.8
   optimizer_main: default.yaml
   optimizer_d: default.yaml
   warmup: 5
@@ -84,3 +81,6 @@ adversarial_cfg:
   gradient_clip_val: 0.1
 
 valid_plots: ${verbose_validation}
+add_standardizing_layer: True
+reverse_pass_mode: additional_input
+afterglow_epoch: 999999999

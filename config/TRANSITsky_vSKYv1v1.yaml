@@ -15,6 +15,7 @@ defaults:
   - experiment/TRANSITv25f_std_SKY@_global_
 
 step_train_template:
+  tags: ["1v1"]
   wandb_key: ${private.wandb_key}
 
 delete_existing_run_dir: False
@@ -40,4 +41,4 @@ general:
 # Configs that are duplicated in a different location just to make sure that retrieve_details in cwola step of the SKY pipeline works
 datamodule: ${data.template_training}
 save_config_to_parent: True
-  
+

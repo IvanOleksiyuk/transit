@@ -4,25 +4,30 @@ defaults:
   - _self_
   - private: private_baobab
   - path: user
-  - data: SKY_DEFAULT
-  - step_train_template: transitv_0v2
+  - data: SKY_DEFAULT_resample
+  - step_train_template: transit_sky_v2v1
   - step_export_template: transit
   - step_export_SB1: default
   - step_export_SB2: default
   - step_export_SB1toSR: default
   - step_export_SB2toSR: default
   - step_evaluate: transit_SKY
-  - override /step_train_template/model: TRANSIT_vSKYv3_std.yaml
+  - override /step_train_template/model: TRANSITvSKYv2v7
+
+data:
+  training_batch_size: 2048
+  resample_train: True
 
 step_train_template:
   model:
+    reverse_pass_mode: additional_input
     input_type: sky_train
-  trainer:
-    check_val_every_n_epoch: 1
   do_scale_epochs: True
+  batches_per_epoch_desired: 200
+  tags: ["2v7"]
   wandb_key: ${private.wandb_key}
 
-delete_existing_run_dir: False
+delete_existing_run_dir: True
 
 do_train_template: True
 do_export_template: True
@@ -36,7 +41,7 @@ do_plot_compare: False
 verbose_validation: False
 
 general:
-  name: TRANSITsky_vSKYv1v3
+  name: TRANSITsky_vSKYv2v7
   subfolder: TEST_SKY_0603/
   seed: 12345 # For reproducibility
   run_dir: workspaces/${general.subfolder}${general.name}
@@ -45,3 +50,4 @@ general:
 # Configs that are duplicated in a different location just to make sure that retrieve_details in cwola step of the SKY pipeline works
 datamodule: ${data.template_training}
 save_config_to_parent: True
+

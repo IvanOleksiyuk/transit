@@ -29,7 +29,7 @@ decoder_cfg:
   act_i: none
   nrm: none
   hddn_dim: 128
-  num_blocks: 3
+  num_blocks: ${hyperparameters.num_blocks}
   n_lyr_pbk: 2
   do_res: True
   scale_output_hidden: 1.0

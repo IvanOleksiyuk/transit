@@ -1,0 +1,18 @@
+defaults:
+  - _self_
+  - model: TRANSITvSKYv2v1.yaml
+  - callbacks: default.yaml
+  - loggers: wandb.yaml
+  - paths: default.yaml
+  - trainer: 200e_noclip.yaml
+  - data: default.yaml
+
+project_name: sky_transit # Determines output directory path and wandb project
+network_name: ${general.name}_${now:%Y-%m-%d}_${now:%H-%M-%S-%f} # Used for both saving and wandb
+ckpt_path: null # Checkpoint path to resume training
+precision: high # Should use medium if on ampere gpus
+compile: null # Can set to default for faster compiles
+full_resume: False
+seed: ${general.seed} 
+automatic_optimization: False
+
