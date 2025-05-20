@@ -8,11 +8,11 @@ several_doping: [0]
 check_doping: 3000 #a value from the original config file to replace
 redo: False
 run_sequentially: False # Run the experiments sequentially
-do_stability_analysis: False
+do_stability_analysis: True
 do_metric_aggregation: True
 not_just_seeds: True
 overrides: ["step_cwola=BDT_LHCO_oversampling_experiment", "step_evaluate=transit_LHCO", "step_cwola=BDT_LHCO_allCWOLA_SBcheck", "do_collect_metrics=1"]
-one_run_sh: /home/users/o/oleksiyu/WORK/hyperproject/transit/jobs/PAPER/TRANSITv0v2_LHCO_one_run_hyper20m.sh
+one_run_sh: /home/users/o/oleksiyu/WORK/hyperproject/transit/jobs/PAPER/TRANSITv0v2_LHCO_one_run_hyper1h.sh
 hyperparameters:
   g_loss_gen_weight: 0.2
   w_cons: 0.1

@@ -6,11 +6,11 @@ defaults:
   - data: LHCO_DEFAULT_speed
   - step_train_template: transitv_0v2
   - step_export_template: transit_LHCO
-  - step_export_SB1: transit_LHCO
-  - step_export_SB2: transit_LHCO
+  - step_export_SB1: default
+  - step_export_SB2: default
   - step_evaluate: transit_LHCO_fast
   - step_cwola: BDT_LHCO_SBcheck
-  - step_export_latent: transit_LHCO
+  - step_export_latent: default
   - step_plot_compare: transit_LHCO
   - step_collect_metrics: default
 
@@ -30,8 +30,8 @@ do_export_latent: True
 do_transport_sideband: True
 do_evaluation: False
 do_cwola: True
-do_evaluate_cwola: False
-do_plot_compare: False
+do_evaluate_cwola: True
+do_plot_compare: True
 do_collect_metrics: True
 
 verbose_validation: False
