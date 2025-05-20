@@ -185,7 +185,11 @@ def main(cfg: DictConfig) -> None:
         log.info("Start: Evaluate the performance of the CWOLA model")
         if hasattr(cfg.step_cwola, "several_confs"):
             for conf in cfg.step_cwola.several_confs.values():
-                cwola_evaluation.main(conf)
+                if hasattr(conf, "do_evaluate"):
+                    if conf.do_evaluate:
+                        cwola_evaluation.main(conf)
+                else:
+                    cwola_evaluation.main(conf)
         else:
             cwola_evaluation.main(cfg.step_cwola)
         log.info(f"Finish: Evaluate the performance of the CWOLA model. Time taken: {datetime.now() - start_time}")
