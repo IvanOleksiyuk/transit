@@ -332,6 +332,9 @@ def main(cfg: DictConfig) -> None:
                 plot_compare.main(cfg.stability_analysis_cfg)
             else:
                 for item in os.listdir(group_dir):
+                    # check if the item is a directory
+                    if not os.path.isdir(os.path.join(group_dir, item)):
+                        continue
                     print("run combination in")
                     print(os.path.join(group_dir, item))
                     item_path = os.path.join(group_dir, item)
