@@ -53,10 +53,12 @@ def main(cfg: DictConfig) -> None:
     log.info("Running latent prediction")
     model.eval() #PL should do it but I just do it to be sure
     e1s = []
-    for batch in datamodule.test_dataloader():
-        e1s.append(model.encode_content(batch[0].to(device), batch[1].to(device)))
+    with T.no_grad():
+        for batch in datamodule.test_dataloader():
+            e1s.append(model.encode_content(batch[0].to(device), batch[1].to(device)).detach().cpu())
+            del batch
     vars = [f"e1_{i}" for i in range(e1s[0].shape[1])]
-    dataset_dict = {var: T.hstack([o[:, i] for o in e1s]).detach().cpu().numpy() for i, var in enumerate(vars)}
+    dataset_dict = {var: T.hstack([o[:, i] for o in e1s]).numpy() for i, var in enumerate(vars)}
     log.info("Saving outputs")
     output_dir = Path(orig_cfg.paths.full_path, "outputs")
     output_dir.mkdir(parents=True, exist_ok=True)
