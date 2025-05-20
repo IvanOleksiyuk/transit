@@ -58,6 +58,18 @@ def get_training_time(root_directory):
 def main(cfg: DictConfig) -> None:
     results = {}
     print("Starting Collecting Metrics")
+    
+    if cfg.get("do_mean_SBtoSR_closure_AUC", False):
+        # read first AUC from file
+        auc_file = cfg.run_dir + "/cwola/window_3100_3300__3700_3900/dope_0/standard/seed_0/closure_roc_auc.txt"
+        with open(auc_file, "r") as f:
+            auc_SB1toSB2 = float(f.read())
+        # read second AUC from file
+        auc_file = cfg.run_dir + "/cwola/window_3100_3300__3700_3900/dope_0/standard/seed_0/closure_roc_auc.txt"
+        with open(auc_file, "r") as f:
+            auc_SB2toSB1 = float(f.read())
+        results["mean_SBtoSR_closure_AUC"] = (auc_SB1toSB2 + auc_SB2toSB1) / 2
+    
     if cfg.get("do_mean_SBtoSB_closure_AUC", False):
         # read first AUC from file
         auc_file = cfg.run_dir + "/cwola_SB2/window_3100_3300__3700_3900/dope_0/standard/seed_0/closure_roc_auc.txt"
@@ -75,6 +87,13 @@ def main(cfg: DictConfig) -> None:
         with open(auc_file, "r") as f:
             auc_laSB = float(f.read())
         results["laSB_closure_AUC"] = auc_laSB
+        
+    if cfg.get("do_laSBvsSR_closure_AUC", False):
+        # read AUC from file
+        auc_file = cfg.run_dir + "/cwola_latent/window_3100_3300__3700_3900/dope_0/standard/seed_0/closure_roc_auc.txt"
+        with open(auc_file, "r") as f:
+            auc_laSB = float(f.read())
+        results["laSBvsSR_closure_AUC"] = auc_laSB
     
     if cfg.get("do_mean_SBtoSB_closure_AUC", False) and cfg.get("do_laSB_closure_AUC", False):
         results["mean_all_closures"] = (auc_SB1toSB2 + auc_SB2toSB1 + auc_laSB) / 3
