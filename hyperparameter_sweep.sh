@@ -1,5 +1,5 @@
-g_loss_gen_weight: [0.05, 0.2, 1.0]
-w_cons: [0.02, 0.1, 0.5]
+g_loss_gen_weight: [0.05, 0.2, 1.0, 0]
+w_cons: [0.02, 0.1, 0.5, 0]
 #proposals:
 #z_dim: [4, 8, 16]
 #n_blocks: [1, 2, 3]
@@ -31,6 +31,12 @@ full_run_cfg=TRANSITv0v2_LHCO_optimisable \
 run_dir=workspaces/HYPER/TRANSITv0v2_LHCO_group_wt2 \
 hyperparameters.g_loss_gen_weight=0.05
 
+HYDRA_FULL_ERROR=1 python /home/users/o/oleksiyu/WORK/hyperproject/transit/scripts/full_run_group.py \
+--config-name full_run_group_0dopings_5seeds_hyper.yaml \
+full_run_cfg=TRANSITv0v2_LHCO_optimisable \
+run_dir=workspaces/HYPER/TRANSITv0v2_LHCO_group_wt3 \
+hyperparameters.g_loss_gen_weight=0.0
+
 ## Ablation: w_cons
 
 HYDRA_FULL_ERROR=1 python /home/users/o/oleksiyu/WORK/hyperproject/transit/scripts/full_run_group.py \
@@ -44,6 +50,12 @@ HYDRA_FULL_ERROR=1 python /home/users/o/oleksiyu/WORK/hyperproject/transit/scrip
 full_run_cfg=TRANSITv0v2_LHCO_optimisable \
 run_dir=workspaces/HYPER/TRANSITv0v2_LHCO_group_wc2 \
 hyperparameters.w_cons=0.02
+
+HYDRA_FULL_ERROR=1 python /home/users/o/oleksiyu/WORK/hyperproject/transit/scripts/full_run_group.py \
+--config-name full_run_group_0dopings_5seeds_hyper.yaml \
+full_run_cfg=TRANSITv0v2_LHCO_optimisable \
+run_dir=workspaces/HYPER/TRANSITv0v2_LHCO_group_wc3 \
+hyperparameters.w_cons=0.0
 
 ## Ablation: latent_dim
 
