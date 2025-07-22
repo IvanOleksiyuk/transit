@@ -93,7 +93,7 @@ def main(cfg: DictConfig) -> None:
         with open(cfg.preprocessing_pkl, "rb") as f:
             preprocessor = pickle.load(f)
             standardiser = preprocessor.features_preprocess.info
-            if hasattr(preprocessor, "discrete_indices"):
+            if hasattr(preprocessor, "discrete_indices") and preprocessor.discrete_indices is not None:
                 discrete_indices = preprocessor.discrete_indices
                 dequantization_cfg = {}
                 dequantization_cfg["discrete_indices"] = discrete_indices
