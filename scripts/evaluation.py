@@ -94,7 +94,7 @@ def main(cfg):
     except:
         print("Could not resume wandb run")
     
-    # Plot the transport from SB1 to SB2
+    # Load some data
     data = {} # a dictionary to store the data
     for key in cfg.step_evaluate.data:
         if "file" in key:
@@ -117,6 +117,7 @@ def main(cfg):
 
     # Plot the contour plot for the generated template on SR
     if getattr(cfg.step_evaluate, "plot_contour_SR", True):
+        log.info("Plotting contour plot for template vs SR")
         if cfg.step_evaluate.debug_eval:
             plot_mode="diagnose"
         else:
@@ -135,6 +136,12 @@ def main(cfg):
             tag = ["SB1, SB2", "SR"],
             save_name="SB2nSB1_to_SR")
         log.info("contour plot is done, in "+str(time.time()-time_start)+" seconds")
+        pltt.plot_individual_histograms(
+            data["target_data"][variables].to_numpy(),
+            data["template_file"][variables].to_numpy(),
+            original_data = data["original_data"][variables].to_numpy(),
+            feature_nms = variables,
+            save_dir=Path(cfg.general.run_dir)/ "plots/SB2nSB1_to_SR_marginals")
         
     if getattr(cfg.step_evaluate, "plot_contour_SB1toSB2transport", True):
         if check_data_loaded(["original_for_SB1_data", "SB1_gen_file", "original_for_SB2_data", "target_for_SB1_data", "target_for_SB2_data"], data)!=[]:
@@ -171,8 +178,10 @@ def main(cfg):
         
         if getattr(cfg.step_evaluate, "eval_classifier_model", "BDT")=="MLP":
             run_cl_fd = run_classifier_folds
+            log.info("Using MLP classifier for SB1toSB2 and SB2toSB1")
         else:
             run_cl_fd = run_validation_BDT_folds
+            log.info("Using BDT classifier for SB1toSB2 and SB2toSB1")
         
         SB1_data = data["target_for_SB1_data"].to_numpy()[:, :-1]
         SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
@@ -227,12 +236,25 @@ def main(cfg):
         
         if getattr(cfg.step_evaluate, "eval_classifier_model", "BDT")=="MLP":
             run_cl_fd = run_classifier_folds
+            log.info("Using MLP classifier for SB1toSR and SB2toSR")
         else:
             run_cl_fd = run_validation_BDT_folds
+            log.info("Using BDT classifier for SB1toSR and SB2toSR")
         
         SR_data = data["target_data"].to_numpy()[:, :-1]
         SB1toSR_gen = data["SB1toSR_gen_file"].to_numpy()[:, :-1]
         SB2toSR_gen = data["SB2toSR_gen_file"].to_numpy()[:, :-1]
+        # Implement the cuts that are used in the CWOLA training
+        if getattr(cfg.step_evaluate, "apply_cuts", True):
+            log.info("Applying cuts to the data, to match it after for CWOLA training")
+            if "del_R" in SR_data:
+                SR_data = SR_data[SR_data["del_R"]<0.4]
+                SB1toSR_gen = SB1toSR_gen[SB1toSR_gen["del_R"]<0.4]
+                SB2toSR_gen = SB2toSR_gen[SB2toSR_gen["del_R"]<0.4]
+            if "del_m" in SR_data:
+                SR_data = SR_data[SR_data["del_m"]<1000]
+                SB1toSR_gen = SB1toSR_gen[SB1toSR_gen["del_m"]<1000]
+                SB2toSR_gen = SB2toSR_gen[SB2toSR_gen["del_m"]<1000]
         
         # Limit the number of events to train the classifier on faster
         n_max=cfg.step_evaluate.get("n_max_class_train", 10000)

@@ -570,55 +570,67 @@ class TRANSIT(LightningModule):
             return total_loss
 
     def _draw_event_transport_trajectories(self, w1_, m_pair_, var, var_name, masses=np.linspace(-2.5, 2.5, 126), max_traj=20):
-        w1 = copy.deepcopy(w1_)[:max_traj]
+        import gc
+
+        max_traj = min(max_traj, w1_.shape[0])
+        w1 = w1_[:max_traj].detach()  # Avoid deepcopy
         m_pair = m_pair_[:max_traj]
-        content = self.encode_content(w1, m_pair)
+        content = self.encode_content(w1, m_pair).detach()
         recons = []
-        if self.adversarial:
-            zs = []
+        zs = [] if self.adversarial else None
+
+        device = w1.device
         for m in masses:
-            w2 = torch.tensor(m).unsqueeze(0).expand(w1.shape[0], 1).float().to(w1.device)
-            style = self.encode_style(w2)
-            recon = self.decode(content, style)
+            w2 = torch.full((w1.shape[0], 1), float(m), dtype=torch.float32, device=device)
+            style = self.encode_style(w2).detach()
+            recon = self.decode(content, style).detach()
             recons.append(recon)
+
             if self.adversarial:
                 if self.use_disc_lat:
-                    zs.append(self.disc_lat(content, style))
+                    zs.append(self.disc_lat(content, style).detach())
                 elif self.use_disc_reco:
-                    zs.append(self.disc_reco(w1, w2))
+                    zs.append(self.disc_reco(w1, w2).detach())
+
+            del style, recon, w2
+            torch.cuda.empty_cache()
+
         if self.adversarial:
-            vmin = min([float(z[:max_traj].min().cpu().detach().numpy()) for z in zs])
-            vmax = max([float(z[:max_traj].max().cpu().detach().numpy()) for z in zs])
+            all_z = torch.stack(zs)
+            vmin = float(all_z.min())
+            vmax = float(all_z.max())
+
         plt.figure()
-        if max_traj is None:
-            max_traj = x.shape[0]
         for i in range(max_traj):
-            x=masses
-            y = np.array([float(recon[i, var].cpu().detach().numpy()) for recon in recons])
+            x = masses
+            y = [float(recon[i, var].cpu().numpy()) for recon in recons]
             if self.adversarial:
-                z = np.array([float(z[i].cpu().detach().numpy()) for z in zs])
+                z = [float(z[i].cpu().numpy()) for z in zs]
                 plt.plot(x, y, "black", zorder=i*2+1)
                 plt.scatter(x, y, c=z, cmap="turbo", s=2, zorder=i*2+2, vmin=vmin, vmax=vmax)
-                if i==0:
+                if i == 0:
                     plt.colorbar()
             else:
                 plt.plot(x, y, "r")
 
-        for i in range(max_traj):
-            plt.scatter(to_np(m_pair)[:max_traj], to_np(w1[:, var])[:max_traj],  marker="x", label="originals", c="green")
+        plt.scatter(to_np(m_pair[:max_traj]), to_np(w1[:, var]), marker="x", label="originals", c="green")
         plt.xlabel("mass")
         plt.ylabel(f"dim{var}")
         plt.title(f"Event transport for {var_name}, global step: {self.global_step}")
-        # Convert to an image and return
+
         fig = plt.gcf()
         fig.tight_layout()
         fig.canvas.draw()
-        img = PIL.Image.frombytes(
-            "RGB",
-            fig.canvas.get_width_height(),
-            fig.canvas.tostring_rgb(),
-        )
+        width, height = fig.canvas.get_width_height()
+        buf = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8).reshape(height, width, 4)
+        buf = buf[:, :, [1, 2, 3, 0]]  # ARGB to RGBA
+        img = PIL.Image.fromarray(buf, "RGBA")
         plt.close("all")
+
+        # Force release memory
+        del w1, content, recons, zs, all_z
+        gc.collect()
+        torch.cuda.empty_cache()
         return img
 
     def _draw_event_transport_trajectories_2nd_der(self, w1_, m_pair_, var, var_name, masses=None, max_traj=20):

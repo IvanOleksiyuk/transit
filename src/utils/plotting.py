@@ -1,6 +1,7 @@
 # Some plotting functions
 import os
 
+from pathlib import Path
 import numpy as np
 import torch 
 from matplotlib import pyplot as plt
@@ -613,3 +614,67 @@ def plot_mass_cuts(quantiles, cuts, data, plots_dir):
     fig.legend()
     fig.savefig(plots_dir / "cuts_to_sidebands.png")
     plt.close(fig)
+
+
+def plot_individual_histograms(
+    target_data,
+    sampled,
+    original_data=None,
+    feature_nms=None,
+    save_dir=None,
+    nbins=100,
+):
+    """
+    Generate and save separate plots for each histogram containing marginals of variables.
+    Histograms are normalized, and subtitles indicate the number of entries in each dataset.
+    """
+    n_features = target_data.shape[1]
+    if feature_nms is None:
+        feature_nms = [f"Feature {i}" for i in range(n_features)]
+    if save_dir is None:
+        save_dir = Path(".")
+    save_dir.mkdir(exist_ok=True)
+
+    for i in range(n_features):
+        fig, ax = plt.subplots(figsize=(8, 6))
+        bins = get_bins(target_data[:, i], nbins=nbins)
+
+        # Plot histograms for each dataset
+        ax.hist(
+            target_data[:, i],
+            bins=bins,
+            weights=get_weights(target_data[:, i]),
+            alpha=0.5,
+            label=f"Target (n={len(target_data[:, i])})",
+            histtype="step",
+            color="blue",
+        )
+        ax.hist(
+            sampled[:, i],
+            bins=bins,
+            weights=get_weights(sampled[:, i]),
+            alpha=0.5,
+            label=f"Sampled (n={len(sampled[:, i])})",
+            histtype="step",
+            color="red",
+        )
+        if original_data is not None:
+            ax.hist(
+                original_data[:, i],
+                bins=bins,
+                weights=get_weights(original_data[:, i]),
+                alpha=0.5,
+                label=f"Original (n={len(original_data[:, i])})",
+                histtype="step",
+                color="green",
+            )
+
+        # Set labels and title
+        ax.set_xlabel(nice_label(feature_nms[i]))
+        ax.set_ylabel("Normalized Entries")
+        ax.set_title(f"Marginal Distribution of {nice_label(feature_nms[i])}")
+        ax.legend()
+
+        # Save the plot
+        fig.savefig(save_dir / f"histogram_{feature_nms[i]}.png", bbox_inches="tight")
+        plt.close(fig)
