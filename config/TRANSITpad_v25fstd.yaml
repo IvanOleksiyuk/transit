@@ -1,15 +1,15 @@
 # @package _global_
 
 defaults:
-  - _self_
   - data: PAD_DEFAULT
   - step_train_template: transitv_0v2
   - step_export_template: transit
   - step_evaluate: transit_PAD
   - override /step_train_template/model: TRANSITv25f_std.yaml
-  #- override /step_train_template/trainer: 1e_noclip.yaml
+  - _self_
 
 step_train_template:
+  project_name: pad_transit
   model:
     reverse_pass_mode: additional_input
   do_scale_epochs: True
