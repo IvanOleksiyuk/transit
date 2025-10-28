@@ -29,11 +29,7 @@ import wandb
 log = logging.getLogger(__name__)
 
 # Optional modules 
-try:
-    import dcor
-except ImportError:
-    dcor = None
-    log.warning("dcor module is not available. Distance correlation calculations will be skipped. (its non-essential only for diagnostics)")
+# import dcor  # for distance correlation if needed
 
 def to_np(inpt: Union[torch.Tensor, tuple]) -> np.ndarray:
     """More consicse way of doing all the necc steps to convert a pytorch
@@ -456,9 +452,11 @@ def evaluate_model(cfg, original_data, target_data, template_data, results={}):
     results.update({"max_abs_spearman": np.max(np.abs(spearman_correlations)), "min_abs_spearman": np.min(np.abs(spearman_correlations)), "mean_abs_spearman": np.mean(np.abs(spearman_correlations))})
     results["kernel_pearson"] = None
     results["hilbert_schmidt"] = HSIC_torch(e1, e2, cuda=False).detach().cpu().numpy()
-    results["DisCo"] = dcor.distance_correlation(to_np(e1), to_np(e2)) if dcor else None
-    dcor_torch = DistanceCorrelation() if dcor else None
-    results["dcor_torch"] = dcor_torch(e1, e2) if dcor else None
+
+    # Legacy code for distance correlation if needed
+    # results["DisCo"] = dcor.distance_correlation(to_np(e1), to_np(e2)) if dcor else None
+    # dcor_torch = DistanceCorrelation() if dcor else None
+    # results["dcor_torch"] = dcor_torch(e1, e2) if dcor else None
 
     # Do some fast calassification
     if getattr(cfg.step_evaluate.procedures, "lazy_predict", True):
