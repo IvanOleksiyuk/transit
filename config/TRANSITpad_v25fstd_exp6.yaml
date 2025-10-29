@@ -11,9 +11,6 @@ defaults:
 
 step_train_template:
   project_name: pad_transit
-  afterglow_epoch: 20
-  model:
-    reverse_pass_mode: additional_input
   do_scale_epochs: True
   trainer:
     check_val_every_n_epoch: 1

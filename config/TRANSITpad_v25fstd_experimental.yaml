@@ -11,10 +11,7 @@ defaults:
 
 step_train_template:
   project_name: pad_transit
-  model:
-    reverse_pass_mode: additional_input
   do_scale_epochs: True
-  afterglow_epoch: 15
   trainer:
     check_val_every_n_epoch: 1
   preprocessing_pkl: ${general.run_dir}/../data/data/preprocessor.pkl
