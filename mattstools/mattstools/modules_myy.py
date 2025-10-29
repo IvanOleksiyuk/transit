@@ -211,6 +211,7 @@ class DenseNetwork(nn.Module):
         output_init_zeros: bool = False,
         use_bias: bool = True,
         scale_output_hidden=None,
+        unit_in_out_res: bool = False,
     ) -> None:
         """Initialise the DenseNetwork.
 
@@ -283,6 +284,7 @@ class DenseNetwork(nn.Module):
         self.num_blocks = len(self.hddn_dim)
         self.ctxt_dim = ctxt_dim
         self.do_out = do_out
+        self.unit_in_out_res = unit_in_out_res
 
         # Necc for this module to work with the nflows package
         self.hidden_features = self.hddn_dim[-1]
@@ -350,17 +352,28 @@ class DenseNetwork(nn.Module):
                 ctxt = ctxt.expand(*inputs.shape[:-1], -1)
 
         # Pass through the input block
-        inputs = self.input_block(inputs, ctxt)
+        interm = self.input_block(inputs, ctxt)
 
         # Pass through each hidden block
         for h_block in self.hidden_blocks:  # Context tensor will only be used if
-            inputs = h_block(inputs, ctxt)  # block was initialised with a ctxt dim
+            interm = h_block(interm, ctxt)  # block was initialised with a ctxt dim
 
         # Pass through the output block
         if self.do_out:
-            inputs = self.output_block(inputs)
+            interm = self.output_block(interm)
 
-        return inputs
+        if self.unit_in_out_res and self.do_out:
+            if self.inpt_dim <= self.outp_dim:
+                interm += nn.functional.pad(
+                    inputs,
+                    (0, self.outp_dim - self.inpt_dim),
+                    "constant",
+                    0,
+                )
+            else:
+                interm += inputs[..., : self.outp_dim]
+
+        return interm
 
     def __repr__(self):
         string = ""
