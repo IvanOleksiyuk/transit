@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - data: PAD_DEFAULT
+  - data: PAD_DEFAULT_flatmass_knn
   - step_train_template: transitv_0v2
   - step_export_template: transit
   - step_evaluate: transit_PAD
@@ -26,10 +26,13 @@ do_cwola: False
 do_evaluate_cwola: False
 do_plot_compare: False
 
-verbose_validation: False
+data:
+  training_batch_size: 4096
+
+verbose_validation: True
 
 general:
-  name: TRANSITpad1v0
+  name: TRANSITpad2v1
   seed: 12345 # For reproducibility
   run_dir: /transit #workspaces/${general.subfolder}${general.name}
   do_dataset_plots: False

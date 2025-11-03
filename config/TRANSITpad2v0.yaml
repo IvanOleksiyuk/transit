@@ -32,7 +32,7 @@ data:
 verbose_validation: False
 
 general:
-  name: TRANSITpad_v25fstd_flatmass
+  name: TRANSITpad2v0
   seed: 12345 # For reproducibility
   run_dir: /transit #workspaces/${general.subfolder}${general.name}
   do_dataset_plots: False
