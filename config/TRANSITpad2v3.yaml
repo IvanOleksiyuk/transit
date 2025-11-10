@@ -5,7 +5,7 @@ defaults:
   - step_train_template: transitv_0v2
   - step_export_template: transit
   - step_evaluate: transit_PAD
-  - override /step_train_template/model: TRANSITv25f_std.yaml
+  - override /step_train_template/model: TRANSITpad2v3.yaml
   - _self_
 
 step_train_template:
