@@ -126,7 +126,6 @@ def main(cfg: DictConfig) -> None:
         start_time = datetime.now()
         log.info("===================================")
         log.info("Start: Generate a template dataset using the model")
-        name = cfg.step_export_template.output_name
         generate_teplate.main(cfg.step_export_template)
         log.info(f"Finish: Generate a template dataset using the model. Time taken: {datetime.now() - start_time}")
         log.info("===================================")
@@ -136,7 +135,6 @@ def main(cfg: DictConfig) -> None:
         start_time = datetime.now()
         log.info("===================================")
         log.info("Start: Generate a template dataset using the model")
-        name = cfg.step_export_template.output_name
         generate_teplate.main(cfg.step_export_SB1)
         generate_teplate.main(cfg.step_export_SB2)
         if hasattr(cfg, "step_export_SB1toSR"):
@@ -151,7 +149,6 @@ def main(cfg: DictConfig) -> None:
         start_time = datetime.now()
         log.info("===================================")
         log.info("Start:Generate latent representation of events in SR and Sidebands")
-        name = cfg.step_export_latent.export_latent_all.output_name
         export_latent_space.main(cfg.step_export_latent.export_latent_all)
         log.info(f"Finish: Generate latent representation of events in SR and Sidebands Time taken: {datetime.now() - start_time}")
         log.info("===================================")
