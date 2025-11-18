@@ -28,6 +28,34 @@ import wandb
 
 log = logging.getLogger(__name__)
 
+def equalise_to_min_len(arr1, arr2, max=None):
+    # shuffle array 1
+    arr1 = copy.deepcopy(arr1)
+    np.random.shuffle(arr1)
+    arr2 = copy.deepcopy(arr2)
+    np.random.shuffle(arr2)
+    len1 = len(arr1)
+    len2 = len(arr2)
+    min_len = min(len1, len2)
+    if max is not None:
+        min_len = min(min_len, max)
+    return arr1[:min_len], arr2[:min_len]
+
+
+
+def _fmt_auc(val):
+    """Format AUC value to 3 decimal places for display on plots/logs.
+
+    If val is a number, return formatted string with 3 decimal places. Otherwise
+    return the string representation (handles "NA" or None).
+    """
+    try:
+        if val is None:
+            return "NA"
+        return f"{float(val):.3f}"
+    except Exception:
+        return str(val)
+
 # Optional modules 
 try:
     import dcor
@@ -117,7 +145,12 @@ def main(cfg):
                 data[key] = pd.concat([data[key].test_data.data["data"], data[key].test_data.data["mass_paired"]], axis=1)
             if cfg.step_evaluate.data[key]["_target_"]=="src.data.data.SimpleDataModule":
                 data[key].setup(stage="test")
-                data[key] = pd.concat([data[key].test_data.data["data"], data[key].test_data.data["cond"]], axis=1)
+                if "cond" in data[key].test_data.data:
+                    data[key] = pd.concat([data[key].test_data.data["data"], data[key].test_data.data["cond"]], axis=1)
+                elif "t" in data[key].test_data.data:
+                    data[key] = pd.concat([data[key].test_data.data["data"], data[key].test_data.data["t"]], axis=1)
+                else:
+                    raise ValueError("interpolation variable not found in data module")
             if cfg.step_evaluate.data[key]["_target_"]=="src.data.data.InMemoryDataFrameDict":
                 data[key] = data[key].data["data"]
             log.info(f"Loaded data {key} with n={len(data[key])}, and vars {data[key].columns.tolist()}")    
@@ -125,13 +158,142 @@ def main(cfg):
     
     variables = data["original_data"].columns.tolist()
 
+    # Use a classifier test to evaluate the difference true and transported samples
+    
+    if getattr(cfg.step_evaluate, "bdt_two_sample_test_SBtoSB", True):
+        from transit.srccwola.bdts import bdt_two_sample_test
+        
+        SB1_data, SB1_gen = equalise_to_min_len(
+            data["target_for_SB1_data"].to_numpy()[:, :-1],
+            data["SB1_gen_file"].to_numpy()[:, :-1],
+            max=cfg.step_evaluate.get("n_max_class_train", None)
+        )
+        SB1_data = data["target_for_SB1_data"].to_numpy()[:, :-1]
+        SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
+        SB2_data = data["target_for_SB2_data"].to_numpy()[:, :-1]
+        SB2_gen = data["SB2_gen_file"].to_numpy()[:, :-1]
+        
+        # Limit the number of events to train the classifier on faster
+        n_max=cfg.step_evaluate.get("n_max_class_train", 50000)
+        if n_max is not None and n_max>0:
+            if len(SB1_data)>n_max:
+                SB1_data = SB1_data[:n_max]
+            if len(SB1_gen)>n_max:
+                SB1_gen = SB1_gen[:n_max]
+            if len(SB2_data)>n_max:
+                SB2_data = SB2_data[:n_max]
+            if len(SB2_gen)>n_max:
+                SB2_gen = SB2_gen[:n_max]
+
+        start_time = time.time()
+        auc_score_1to2 = bdt_two_sample_test(
+            SB2_data, 
+            SB2_gen)
+        end_time = time.time()
+        log.info(f"SB1toSB2 vs SB2 AUC={_fmt_auc(auc_score_1to2)} (took {end_time - start_time:.1f} seconds)")
+        wandb.log({"evaluation/AUCBDTclasstest_SB1toSB2": auc_score_1to2})
+        results["AUCBDTclasstest_SB1toSB2"] = auc_score_1to2
+        
+        start_time = time.time()
+        auc_score_2to1 = bdt_two_sample_test(
+            SB1_data, 
+            SB1_gen)
+        end_time = time.time()
+        log.info(f"SB2toSB1 vs SB2 AUC={_fmt_auc(auc_score_2to1)} (took {end_time - start_time:.1f} seconds)")
+        wandb.log({"evaluation/AUCBDTclasstest_SB2toSB1": auc_score_2to1})
+        results["AUCBDTclasstest_SB2toSB1"] = auc_score_2to1        
+    if getattr(cfg.step_evaluate, "bdt_two_sample_test_SB1nSB2toSR", True):
+        from transit.srccwola.bdts import bdt_two_sample_test
+        
+        SR_data = data["target_data"].to_numpy()[:, :-1]
+        SB1toSR_gen = data["SB1toSR_gen_file"].to_numpy()[:, :-1]
+        SB2toSR_gen = data["SB2toSR_gen_file"].to_numpy()[:, :-1]
+        
+        # Limit the number of events to train the classifier on faster
+        n_max=cfg.step_evaluate.get("n_max_class_train", 50000)
+        if n_max is not None and n_max>0:
+            if len(SR_data)>n_max:
+                SR_data = SR_data[:n_max]
+            if len(SB1toSR_gen)>n_max:
+                SB1toSR_gen = SB1toSR_gen[:n_max]
+            if len(SB2toSR_gen)>n_max:
+                SB2toSR_gen = SB2toSR_gen[:n_max]
+            
+        start_time = time.time()
+        auc_score_SB1toSR = bdt_two_sample_test(
+            SB1toSR_gen, 
+            SR_data)
+        end_time = time.time()
+        
+        log.info(f"SB1toSR vs SR AUC={_fmt_auc(auc_score_SB1toSR)} (took {end_time - start_time:.1f} seconds)")
+        wandb.log({"evaluation/AUCBDTclasstest_SB1toSR": auc_score_SB1toSR})
+        results["AUCBDTclasstest_SB1toSR"] = auc_score_SB1toSR
+        
+        start_time = time.time()
+        auc_score_SB2toSR = bdt_two_sample_test(
+            SB2toSR_gen, 
+            SR_data)
+        end_time = time.time()
+        log.info(f"SB2toSR vs SR AUC={_fmt_auc(auc_score_SB2toSR)} (took {end_time - start_time:.1f} seconds)")
+        wandb.log({"evaluation/AUCBDTclasstest_SB2toSR": auc_score_SB2toSR})
+        results["AUCBDTclasstest_SB2toSR"] = auc_score_SB2toSR
+    if getattr(cfg.step_evaluate, "bdt_two_sample_test_La_SB1nSB2vsSR", True):
+        from transit.srccwola.bdts import bdt_two_sample_test
+        
+        SR_data = data["laSR_file"].to_numpy()
+        SB_data = data["laSB_file"].to_numpy()
+        
+        # Limit the number of events to train the classifier on faster
+        n_max=cfg.step_evaluate.get("n_max_class_train", 50000)
+        if n_max is not None and n_max>0:
+            if len(SR_data)>n_max:
+                SR_data = SR_data[:n_max]
+            if len(SB_data)>n_max:
+                SB_data = SB_data[:n_max]
+            
+        start_time = time.time()
+        AUCBDTclasstest_laSB1nSB2vsSR = bdt_two_sample_test(
+            SB_data, 
+            SR_data)
+        end_time = time.time()
+        log.info(f"Finish classifier train/eval (took {end_time - start_time} seconds)")
+        
+        log.info(f"laSB1nSB2 vs laSR AUC={AUCBDTclasstest_laSB1nSB2vsSR:.3f}")
+        wandb.log({"evaluation/AUCBDTclasstest_laSB1nSB2vsSR": AUCBDTclasstest_laSB1nSB2vsSR})
+        results["AUCBDTclasstest_laSB1nSB2vsSR"] = AUCBDTclasstest_laSB1nSB2vsSR
+    if getattr(cfg.step_evaluate, "bdt_two_sample_test_La_SB1vsSB2", True):
+        from transit.srccwola.bdts import bdt_two_sample_test
+        
+        SB1_data = data["laSB1_file"].to_numpy()
+        SB2_data = data["laSB2_file"].to_numpy()
+        
+        # Limit the number of events to train the classifier on faster
+        n_max=cfg.step_evaluate.get("n_max_class_train", 50000)
+        if n_max is not None and n_max>0:
+            if len(SB1_data)>n_max:
+                SB1_data = SB1_data[:n_max]
+            if len(SB2_data)>n_max:
+                SB2_data = SB2_data[:n_max]
+            
+        start_time = time.time()
+        auc_score_SB1vsSB2 = bdt_two_sample_test(
+            SB1_data, 
+            SB2_data)
+        end_time = time.time()
+        log.info(f"Finish classifier train/eval (took {end_time - start_time:.1f} seconds)")
+        
+        log.info(f"laSB1 vs laSB2 AUC={auc_score_SB1vsSB2}")
+        wandb.log({"evaluation/AUCBDTclasstest_laSB1vsSB2": auc_score_SB1vsSB2})
+        results["AUCBDTclasstest_laSB1vsSB2"] = auc_score_SB1vsSB2
+
+
     # Plot the contour plot for the generated template on SR
-    if getattr(cfg.step_evaluate, "plot_contour_SR", True):
+    if getattr(cfg.step_evaluate, "plot_contour_SB1nSB2toSR", True):
         if cfg.step_evaluate.debug_eval:
             plot_mode="diagnose"
         else:
             plot_mode=""
-        log.info("Starting plot_contour_SR plot "+plot_mode)
+        log.info("Starting plot_contour_SB1nSB2toSR plot "+plot_mode)
         time_start = time.time()
         pltt.plot_feature_spread(
             data["target_data"][variables].to_numpy(),
@@ -142,10 +304,10 @@ def main(cfg):
             plot_mode=plot_mode,
             do_2d_hist_instead_of_contour=cfg.step_evaluate.do_2d_hist_instead_of_contour,
             x_bounds=cfg.step_evaluate.x_bounds or None,
-            tag = ["SB1, SB2", "SR"],
+            tag = ["SB1, SB2", "SR AUC=" + _fmt_auc(results.get("AUCBDTclasstest_SB1nSB2toSR", None))],
             save_name="SB2nSB1_to_SR")
         log.info("contour plot is done, in "+str(time.time()-time_start)+" seconds")
-    if getattr(cfg.step_evaluate, "plot_contour_la_SBSR", True):
+    if getattr(cfg.step_evaluate, "plot_contour_laSB1nSB2vsSR", True):
         if cfg.step_evaluate.debug_eval:
             plot_mode="diagnose"
         else:
@@ -155,35 +317,34 @@ def main(cfg):
         pltt.plot_feature_spread(
             data["laSB_file"].to_numpy(),
             data["laSR_file"].to_numpy(),
-            original_data = data["laSB_file"].to_numpy(), #data["original_data"][variables].to_numpy(),
+            original_data = None,
             feature_nms = None,
             save_dir=Path(cfg.general.run_dir)/ "plots/",
             plot_mode=plot_mode,
             do_2d_hist_instead_of_contour=cfg.step_evaluate.do_2d_hist_instead_of_contour,
             x_bounds=cfg.step_evaluate.x_bounds or None,
-            tag = ["SB1, SB2", "SR"],
-            save_name="latent_SB_SR_TM")
-        log.info("contour plot is done, in "+str(time.time()-time_start)+" seconds")
-    if getattr(cfg.step_evaluate, "plot_contour_la_SBSRTM", False):
+            tag = ["-", "- AUC=" + _fmt_auc(results.get("AUCBDTclasstest_laSB1nSB2vsSR", None))],
+            save_name="latent_SB_SR")
+        log.info("contour plot is done, in "+str(time.time()-time_start)+" seconds") 
+    if getattr(cfg.step_evaluate, "plot_contour_laSB1_laSB2", True):
         if cfg.step_evaluate.debug_eval:
             plot_mode="diagnose"
         else:
             plot_mode=""
-        log.info("Starting plot_contour_la_SBSRTM plot "+plot_mode)
+        log.info("Starting plot_contour_la_SBSR plot "+plot_mode)
         time_start = time.time()
         pltt.plot_feature_spread(
-            data["laTM_file"].to_numpy(),
-            data["laSR_file"].to_numpy(),
-            original_data = data["laSB_file"].to_numpy(), #data["original_data"][variables].to_numpy(),
+            data["laSB1_file"].to_numpy(),
+            data["laSB2_file"].to_numpy(),
+            original_data = None,
             feature_nms = None,
             save_dir=Path(cfg.general.run_dir)/ "plots/",
             plot_mode=plot_mode,
             do_2d_hist_instead_of_contour=cfg.step_evaluate.do_2d_hist_instead_of_contour,
             x_bounds=cfg.step_evaluate.x_bounds or None,
-            tag = ["SB1, SB2", "SR"],
-            save_name="latent_SB_SR_TM")
-        log.info("contour plot is done, in "+str(time.time()-time_start)+" seconds")
-        
+            tag = ["-", "- AUC=" + _fmt_auc(results.get("AUCBDTclasstest_laSB1vsSB2", None))],
+            save_name="latent_SB1_SB2")
+        log.info("contour plot is done, in "+str(time.time()-time_start)+" seconds") 
     if getattr(cfg.step_evaluate, "plot_contour_SB1toSB2transport", True):
         if check_data_loaded(["original_for_SB1_data", "SB1_gen_file", "original_for_SB2_data", "target_for_SB1_data", "target_for_SB2_data"], data)!=[]:
             print("Missing data: ", check_data_loaded(["original_for_SB1_data", "SB1_gen_file", "original_for_SB2_data", "target_for_SB1_data", "target_for_SB2_data"], data))
@@ -197,9 +358,9 @@ def main(cfg):
                 plot_mode=plot_mode,
                 do_2d_hist_instead_of_contour=cfg.step_evaluate.do_2d_hist_instead_of_contour,
                 x_bounds=cfg.step_evaluate.x_bounds or None,
-                tag = ["SB2", "SB1"],
+                tag = ["SB2", "SB1 AUC=" + _fmt_auc(results.get("AUCBDTclasstest_SB2toSB1", None))],
                 save_name="SB2_to_SB1")
-            log.info("Plotted SB2 to SB1 transport")
+            log.info(f"Plotted SB2 to SB1 transport: {cfg.general.run_dir}/plots/SB2_to_SB1.png")
             pltt.plot_feature_spread(
                 data["target_for_SB2_data"][variables].to_numpy(),
                 data["SB2_gen_file"][variables].to_numpy(),
@@ -209,12 +370,17 @@ def main(cfg):
                 plot_mode=plot_mode,
                 do_2d_hist_instead_of_contour=cfg.step_evaluate.do_2d_hist_instead_of_contour,
                 x_bounds=cfg.step_evaluate.x_bounds or None,
-                tag = ["SB1", "SB2"],
+                tag = ["SB1", "SB2 AUC=" + _fmt_auc(results.get("AUCBDTclasstest_SB1toSB2", None))],
                 save_name="SB1_to_SB2")
-            log.info("Plotted SB1 to SB2 transport")
-    
+            log.info(f"Plotted SB1 to SB2 transport: {cfg.general.run_dir}/plots/SB1_to_SB2.png")
+
+
+    # Some old stuff for SKY classifier evaluation
     if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB_transport", False):
-        from src.model.denseclassifier import run_classifier_folds
+        if getattr(cfg.step_evaluate, "classifier_for_test", "SKY") == "SKY":
+            from src.model.denseclassifier import run_classifier_folds
+        else:
+            from transit.srccwola.classifier import run_classifier_folds
         
         SB1_data = data["target_for_SB1_data"].to_numpy()[:, :-1]
         SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
@@ -234,33 +400,37 @@ def main(cfg):
                 SB2_gen = SB2_gen[:n_max]
             
         log.info("Starting classifier train/eval")
-        auc_score_1to2, threshold, data_preds = run_classifier_folds(
+        run1_result = run_classifier_folds(
             SB2_data, 
             SB2_gen,
             save_dir=Path(cfg.general.run_dir),
             tag=f"sb1to2",
             return_threshold=False,  # if key == "sb12r" else False,
         )
+        auc_score_1to2 = run1_result[0]
         log.info("Finish classifier train/eval")
-        log.info(f"SB1toSB2 vs SB2 AUC={auc_score_1to2}")
-        wandb.log({"evaluation/sb1to2_AUC": auc_score_1to2})
+        log.info(f"SB1toSB2 vs SB2 AUC={_fmt_auc(auc_score_1to2)}")
+        wandb.log({"evaluation/SKY_sb1to2_AUC": auc_score_1to2})
         results["sb1to2_AUC"] = auc_score_1to2
         
         log.info("Starting classifier train/eval")
-        auc_score_2to1, threshold, data_preds = run_classifier_folds(
+        run2_result = run_classifier_folds(
             SB1_data, 
             SB1_gen,
             save_dir=Path(cfg.general.run_dir),
             tag=f"sb2to1",
             return_threshold=False,  # if key == "sb12r" else False,
         )
+        auc_score_2to1 = run2_result[0]
         log.info("Finish classifier train/eval")
-        log.info(f"SB2toSB1 vs SB2 AUC={auc_score_2to1}")
-        wandb.log({"evaluation/sb2to1_AUC": auc_score_2to1})
-        results["sb2to1_AUC"] = auc_score_2to1
-        
+        log.info(f"SB2toSB1 vs SB2 AUC={_fmt_auc(auc_score_2to1)}")
+        wandb.log({"evaluation/SKY_sb2to1_AUC": auc_score_2to1})
+        results["sb2to1_AUC"] = auc_score_2to1        
     if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", False):
-        from src.model.denseclassifier import run_classifier_folds
+        if getattr(cfg.step_evaluate, "classifier_for_test", "SKY") == "SKY":
+            from src.model.denseclassifier import run_classifier_folds
+        else:
+            from transit.srccwola.classifier import run_classifier_folds
         
         SR_data = data["target_data"].to_numpy()[:, :-1]
         SB1toSR_gen = data["SB1toSR_gen_file"].to_numpy()[:, :-1]
@@ -286,8 +456,8 @@ def main(cfg):
         )
         log.info("Finish classifier train/eval")
         
-        log.info(f"SB1toSR vs SR AUC={auc_score_SB1toSR}")
-        wandb.log({"evaluation/auc_score_SB1toSR_AUC": auc_score_SB1toSR})
+        log.info(f"SB1toSR vs SR AUC={_fmt_auc(auc_score_SB1toSR)}")
+        wandb.log({"evaluation/SKYauc_score_SB1toSR_AUC": auc_score_SB1toSR})
         results["sb1toSR_AUC"] = auc_score_SB1toSR
         
         log.info("Starting classifier train/eval")
@@ -299,20 +469,18 @@ def main(cfg):
             return_threshold=False,  # if key == "sb12r" else False,
         )
         log.info("Finish classifier train/eval")
-        log.info(f"SB2toSR vs SR AUC={auc_score_SB2toSR}")
-        wandb.log({"evaluation/auc_score_SB2toSR_AUC": auc_score_SB2toSR})
-        results["sb2toSR_AUC"] = auc_score_SB2toSR
-    
+        log.info(f"SB2toSR vs SR AUC={_fmt_auc(auc_score_SB2toSR)}")
+        wandb.log({"evaluation/SKYauc_score_SB2toSR_AUC": auc_score_SB2toSR})
+        results["sb2toSR_AUC"] = auc_score_SB2toSR    
     if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", False) and getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB2transport", False):
         deb_score = ((auc_score_1to2+auc_score_2to1)*2+auc_score_SB1toSR+auc_score_SB2toSR)/6
         log.info(f"deb_score={deb_score}")
-        wandb.log({"evaluation/deb_score": deb_score})
+        wandb.log({"evaluation/SKYdeb_score": deb_score})
         with open(cfg.general.run_dir+"/template/evaluate_sbtosb.txt", "w") as f:
             f.write(f"n_max_class_train={n_max}\n")
-            f.write(f"sb1to2 vs sb2 AUC={auc_score_2to1}\n")
-            f.write(f"sb2to1 vs sb1 AUC={auc_score_1to2}\n")
-
-    if getattr(cfg.step_evaluate, "plot_everything_else", True):
+            f.write(f"sb1to2 vs sb2 AUC={_fmt_auc(auc_score_2to1)}\n")
+            f.write(f"sb2to1 vs sb1 AUC={_fmt_auc(auc_score_1to2)}\n")
+    if getattr(cfg.step_evaluate, "plot_everything_else", False):
         evaluate_model(cfg, data["original_data"], data["target_data"], data["template_file"])
 
 

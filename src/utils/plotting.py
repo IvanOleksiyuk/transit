@@ -32,6 +32,8 @@ def nice_label(label):
         return label
 
 def shuffle_tensor(data):
+    if data is None:
+        return None
     mx = torch.randperm(len(data), device=torch.device('cpu'))
     return data[mx]
 
@@ -435,7 +437,7 @@ def auc_roc(labels, truth, name):
     fpr, tpr, _ = roc_curve(labels, truth)
     roc_auc = auc(fpr, tpr)
     fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-    ax.plot(fpr, tpr, label=f"{roc_auc:.4f}", linewidth=2)
+    ax.plot(fpr, tpr, label=f"{roc_auc:.3f}", linewidth=2)
     ax.plot([0, 1], [0, 1], "k--")
     ax.set_xticks(np.arange(0, 1.1, 0.1))
     ax.set_xlabel("False positive rate")

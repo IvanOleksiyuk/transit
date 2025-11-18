@@ -149,7 +149,11 @@ def main(cfg: DictConfig) -> None:
         start_time = datetime.now()
         log.info("===================================")
         log.info("Start:Generate latent representation of events in SR and Sidebands")
-        export_latent_space.main(cfg.step_export_latent.export_latent_all)
+        if hasattr(cfg.step_export_latent, "several_confs"):
+            for conf in cfg.step_export_latent.several_confs.values():
+                export_latent_space.main(conf)
+        else:
+            export_latent_space.main(cfg.step_export_latent.export_latent_all)
         log.info(f"Finish: Generate latent representation of events in SR and Sidebands Time taken: {datetime.now() - start_time}")
         log.info("===================================")
         update_runtime_file('Generate latent: {}\n'.format(datetime.now() - start_time))
