@@ -100,6 +100,23 @@ def rmse(tens_a: T.Tensor, tens_b: T.Tensor, dim: int = 0) -> T.Tensor:
     """Return RMSE without using torch's warning filled mseloss method."""
     return (tens_a - tens_b).pow(2).mean(dim=dim).sqrt()
 
+class LeakySoftplus(nn.Module):
+    """A mixed activation function that can be used to combine multiple activation functions.
+
+    Parameters
+    ----------
+    activations : List[Union[str, nn.Module]]
+        A list of activation functions to combine.
+    """
+
+    def __init__(self, leak=0.2) -> None:
+        super().__init__()
+        self.leak = leak
+        self.rest = 1.0 - leak
+        self.softplus = nn.Softplus()
+
+    def forward(self, x: T.Tensor) -> T.Tensor:
+        return self.rest * self.softplus(x) + self.leak * x
 
 def get_act(name: str) -> nn.Module:
     """Return a pytorch activation function given a name."""
@@ -121,8 +138,10 @@ def get_act(name: str) -> nn.Module:
         return nn.GELU()
     if name == "tanh":
         return nn.Tanh()
-    if name == "softmax":
-        return nn.Softmax()
+    if name == "softplus":
+        return nn.Softplus()
+    if name == "leaky_softplus":
+        return LeakySoftplus()
     if name == "sigmoid":
         return nn.Sigmoid()
     if name == "identity" or name == "none":

@@ -132,24 +132,56 @@ export_latent_sr:
     drop_last: false
     persistent_workers: True
 
-export_latent_tm:
+export_latent_sb1:
   _target_: src.data.data.SimpleDataModule
   train_frac: 0.8
   train_data: null
   test_data:
     _target_: src.data.data.InMemoryDataFrameDict
-    list_order: ["data", "cond"]
-    file_path: ${general.run_dir}/template/outputs/template_sample.h5
-    plotting_path: "${general.run_dir}/plots/tm"
+    list_order: ["data", "t"]
+    file_path: "${general.run_dir}/../data/data/sb.h5"
+    plotting_path: "${general.run_dir}/plots/sb1"
     processor_cfg:
-      - _target_: src.data.process.ProcessorSplitDataFrameVars
-        frame_name: "template"
-        new_df_dict:
-          cond: ["m_jj"]
-        rest_df: "data"
+      - _target_: src.data.process.ProcessorShuffle
+        random_state: ${general.seed}
+        add_seed: 1000
+      - _target_: src.data.process.ProcessorSelectSidebands
+        mode: "SB1"
+        SB1SRSB2_edges: ${data.SB1SRSB2_edges}
+        scalar_df_name: "t"
+        var_name: "t"
+      - _target_: src.data.process.ProcessorKeepFrames
+        frame_names_to_keep: ["data", "t"]
   loader_kwargs:
     pin_memory: true
     batch_size: ${data.training_batch_size}
     num_workers: 16
-    drop_last: false
+    drop_last: true
+    persistent_workers: True
+
+export_latent_sb2:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data: null
+  test_data:
+    _target_: src.data.data.InMemoryDataFrameDict
+    list_order: ["data", "t"]
+    file_path: "${general.run_dir}/../data/data/sb.h5"
+    plotting_path: "${general.run_dir}/plots/sb2"
+    processor_cfg:
+      - _target_: src.data.process.ProcessorShuffle
+        random_state: ${general.seed}
+        add_seed: 1000
+      - _target_: src.data.process.ProcessorSelectSidebands
+        mode: "SB2"
+        SB1SRSB2_edges: ${data.SB1SRSB2_edges}
+        scalar_df_name: "t"
+        var_name: "t"
+      - _target_: src.data.process.ProcessorKeepFrames
+        frame_names_to_keep: ["data", "t"]
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: true
     persistent_workers: True

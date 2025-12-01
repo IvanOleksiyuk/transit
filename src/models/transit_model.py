@@ -8,6 +8,7 @@ import PIL
 import copy
 from functools import partial
 from typing import Any, Mapping
+import pickle
 
 # torch related
 from torch import nn
@@ -78,6 +79,7 @@ class TRANSIT(LightningModule):
         input_type = "default",
         valid_plot_freq = 1,
         dequantization_cfg = None,
+        true_trajectory_pickle_file = None, # Path to a pickle file containing a function that provides true trajectories
     ) -> None:
         """
         Args:
@@ -113,6 +115,10 @@ class TRANSIT(LightningModule):
                 self.gradient_clip_val = adversarial_cfg.gradient_clip_val
         else:
             self.adversarial = False
+        if true_trajectory_pickle_file is not None:
+            self.true_trajectory_function = pickle.load(open(true_trajectory_pickle_file, "rb"))
+        else:
+            self.true_trajectory_function = None
         self.use_m_encodig = use_m_encodig
         self.loss_cfg = loss_cfg
         self.valid_plots = valid_plots
@@ -590,8 +596,10 @@ class TRANSIT(LightningModule):
             total_loss = self._shared_step(sample, step_type="train", _batch_index=batch_idx)
             return total_loss
 
-    def _draw_event_transport_trajectories(self, w1_, m_pair_, var, var_name, masses="auto", max_traj=20):
+    def _draw_event_transport_trajectories(self, w1_, m_pair_, var, var_name, masses="auto", max_traj=20, plot_second_derivative=True):
         import gc
+        if self.true_trajectory_function is not None and max_traj>10:
+            max_traj=10
 
         max_traj = min(max_traj, w1_.shape[0])
         w1 = w1_[:max_traj].detach()  # Avoid deepcopy
@@ -603,11 +611,13 @@ class TRANSIT(LightningModule):
         device = w1.device
         if masses == "auto":
             interval= max(m_pair_.flatten().cpu().numpy()) - min(m_pair_.flatten().cpu().numpy())
-            masses = np.linspace(min(m_pair_.flatten().cpu().numpy())-interval/5, max(m_pair_.flatten().cpu().numpy())+interval/5, 126)
+            masses = np.linspace(min(m_pair_.flatten().cpu().numpy())-interval/10, max(m_pair_.flatten().cpu().numpy())+interval/10, 126)
         for m in masses:
             w2 = torch.full((w1.shape[0], 1), float(m), dtype=torch.float32, device=device)
             style = self.encode_style(w2).detach()
-            recon = self.decode(content, style).detach()
+            recon = self.decode(content, style)
+            recon = self.std_layer_x.reverse(recon) if self.add_standardizing_layer else recon
+            recon = recon.detach()
             recons.append(recon)
 
             if self.adversarial:
@@ -625,8 +635,11 @@ class TRANSIT(LightningModule):
             vmax = float(all_z.max())
 
         plt.figure()
+
+
+            
+        x = self.std_layer_ctxt.reverse(torch.tensor(masses).to(w1.device)).cpu().numpy().reshape(-1) if self.add_standardizing_layer else masses.cpu().numpy().reshape(-1)
         for i in range(max_traj):
-            x = masses
             y = [float(recon[i, var].cpu().numpy()) for recon in recons]
             if self.adversarial:
                 z = [float(z[i].cpu().numpy()) for z in zs]
@@ -637,10 +650,29 @@ class TRANSIT(LightningModule):
             else:
                 plt.plot(x, y, "r")
 
-        plt.scatter(to_np(m_pair[:max_traj]), to_np(w1[:, var]), marker="x", label="originals", c="green")
+        x_pair = self.std_layer_ctxt.reverse(m_pair).cpu().numpy() if self.add_standardizing_layer else m_pair.cpu().numpy()
+        y_pair = self.std_layer_x.reverse(w1).cpu().numpy() if self.add_standardizing_layer else w1.cpu().numpy()
+        plt.scatter(x_pair, y_pair[:, var], marker="x", label="originals", c="green")
         plt.xlabel("mass")
         plt.ylabel(f"dim{var}")
         plt.title(f"Event transport for {var_name}, global step: {self.global_step}")
+
+        if self.true_trajectory_function is not None:
+            if not hasattr(self, "cached_true_trajectories"):
+                self.cached_true_trajectories = []
+                true_y0 = []
+                for x_start, y_strat in zip(x_pair, y_pair):
+                    true_y = self.true_trajectory_function.inverse(y_strat, x_start)
+                    true_y0.append(true_y)
+                for i in range(max_traj):
+                    traj=[]
+                    for x_val in x:
+                        true_y = self.true_trajectory_function.forward(true_y0[i], x_val)
+                        traj.append(true_y)
+                    self.cached_true_trajectories.append(traj)
+                self.cached_true_trajectories = np.array(self.cached_true_trajectories)
+            for i in range(max_traj):
+                plt.plot(x, self.cached_true_trajectories[i][:, var], "b--", label="true trajectory" if i==0 else None, color="gray")
 
         fig = plt.gcf()
         fig.tight_layout()
@@ -651,11 +683,33 @@ class TRANSIT(LightningModule):
         img = PIL.Image.fromarray(buf, "RGBA")
         plt.close("all")
 
+        if plot_second_derivative:
+            plt.figure()
+            for i in range(max_traj):
+                y = np.array([float(recon[i, var].cpu().numpy()) for recon in recons])
+                plt.plot(x[1:-1], (-2*y[1:-1]+y[:-2]+y[2:])/(x[1]-x[0])**2, "r")
+            plt.xlabel("mass")
+            plt.ylabel(f"dim{var}")
+            plt.title(f"Event transport 2nd derivative for {var_name}, global step: {self.global_step}")
+            fig = plt.gcf()
+            fig.tight_layout()
+            fig.canvas.draw()
+            width, height = fig.canvas.get_width_height()
+            buf = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8).reshape(height, width, 4)
+            buf = buf[:, :, [1, 2, 3, 0]]  # ARGB to RGBA
+            img2 = PIL.Image.fromarray(buf, "RGBA")
+            plt.close("all")
+            # Force release memory
+            del w1, content, recons, zs, all_z
+            gc.collect()
+            torch.cuda.empty_cache()
+            return img, img2
+
         # Force release memory
         del w1, content, recons, zs, all_z
         gc.collect()
         torch.cuda.empty_cache()
-        return img
+        return img, None
 
     def _draw_event_transport_trajectories_2nd_der(self, w1_, m_pair_, var, var_name, masses=None, max_traj=20):
         w1 = copy.deepcopy(w1_)[:max_traj]
@@ -701,7 +755,6 @@ class TRANSIT(LightningModule):
         return img
 
     def validation_step (self, sample: tuple, batch_idx: int) -> torch.Tensor:
-        
         total_loss, e1, e2, w1, w2 = self._shared_step(sample, step_type="valid", _batch_index=batch_idx)
         batch_size=sample[0].shape[0]
         rpm = torch.randperm(batch_size)
@@ -728,12 +781,13 @@ class TRANSIT(LightningModule):
             
         if batch_idx == 0 and self.valid_plots and self.current_epoch%self.valid_plot_freq==0:
             for var in range(w1.shape[1]):
-                image = wandb.Image(self._draw_event_transport_trajectories(w1, w2, var=var, var_name=self.var_group_list[0][var], max_traj=20))
+                image_traj, images_2der = self._draw_event_transport_trajectories(w1, w2, var=var, var_name=self.var_group_list[0][var], max_traj=20)
                 if wandb.run is not None:
+                    image = wandb.Image(image_traj)
                     wandb.run.log({f"valid_images/transport_{self.var_group_list[0][var]}": image})
-                # image = wandb.Image(self._draw_event_transport_trajectories_2nd_der(sample[0], sample[1], var=var, var_name=self.var_group_list[0][var], max_traj=20))
-                # if wandb.run is not None:
-                #     wandb.run.log({f"valid_images/transport_2nd_der_{self.var_group_list[0][var]}": image})
+                    if images_2der is not None:
+                        image_2der = wandb.Image(images_2der)
+                        wandb.run.log({f"valid_images/transport_2der_{self.var_group_list[0][var]}": image_2der})
         return total_loss
 
     def on_fit_start(self, *_args) -> None:

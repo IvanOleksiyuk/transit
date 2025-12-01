@@ -1,9 +1,14 @@
+import pickle
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import os
+import pyrootutils
+root = pyrootutils.setup_root(search_from=__file__, pythonpath=True, cwd=True, indicator=".project-root")
+from transit.src.utils.trajectories import ConstantTrajectory, LinearTrajectory, QuadraticTrajectory
+
 
 def random_gaussian_blobs_parametrers(n_blobs, n_vars):
     gaussian_parameters = []
@@ -38,37 +43,11 @@ def sample_from_gaussian_mixture(gaussian_parameters, n_points):
             samples.append(samples_blob)
     return np.vstack(samples)
 
-def trajectory_constant(point, t):
-    return point
-
-def trajectory_linear(point, t, velocity="random", mask=None):
-    len_= len(point[mask])
-    if velocity == None:
-        velocity = np.ones(len_)
-    if velocity == "random":
-        velocity = np.random.uniform(-0.5, 0.5, size=len_)
-    return point[mask] + velocity * t
-
 def create_random_quadratic_trajectory_params(len_):
     a = np.random.uniform(-1, 1, size=len_)
     peak_t = np.random.uniform(-1, 1, size=len_)
     lin = np.random.uniform(-1, 1, size=len_)
     return {"a": a, "peak_t": peak_t, "lin": lin}
-
-def trajectory_quadratic(point, t, a=0, peak_t=0, lin=0, mask=None):
-    return point[mask] + lin * t + 0.5 * a * (t - peak_t)**2
-
-def randomt_trajectory_displacement(point_at0, t_interval, trajectory_type="linear", parameters=None):
-    t0, t1 = t_interval
-    t = np.random.uniform(t0, t1)
-    if trajectory_type == "constant":
-        return t, trajectory_constant(point_at0, t)
-    elif trajectory_type == "linear":
-        return t, trajectory_linear(point_at0, t)
-    elif trajectory_type == "quadratic":
-        return t, trajectory_quadratic(point_at0, t, **parameters)
-    else:
-        raise ValueError(f"Unknown trajectory type: {trajectory_type}")
 
 def generate_test_data_using_trajectories(n_vars=5, n_points=1000, t_interval=[-1, 1], gaussian_parameters=None, traj_type=None, traj_params=None, plot_path=""):
     # Step 0 handle some special cases for gaussian_parameters input
@@ -78,8 +57,18 @@ def generate_test_data_using_trajectories(n_vars=5, n_points=1000, t_interval=[-
         ]
     if gaussian_parameters=="random":
         gaussian_parameters = random_gaussian_blobs_parametrers(n_blobs=3, n_vars=n_vars)
-    if traj_type is None:
-        traj_type = "constant"
+    
+    # Initialize Trajectory object
+    if traj_type == "constant":
+        traj = ConstantTrajectory(n_vars)
+    elif traj_type == "linear":
+        traj = LinearTrajectory(n_vars, velocity="random")
+    elif traj_type == "quadratic":
+        if traj_params is None:
+            traj_params = {}
+        traj = QuadraticTrajectory(n_vars, **traj_params)
+    else:
+        traj = ConstantTrajectory(n_vars)
 
     # Step 1 generate gaussian blobs usign gaussian parameters such as mean and covariance
     points = sample_from_gaussian_mixture(gaussian_parameters, n_points)
@@ -95,14 +84,40 @@ def generate_test_data_using_trajectories(n_vars=5, n_points=1000, t_interval=[-
             plt.savefig(f"{plot_path}/0_t/variable_{i}_vs_variable_{j}.png")
             plt.close()
 
+    # Plot trajectories for 20 random points
+    if plot_path:
+        os.makedirs(f"{plot_path}/trajectories", exist_ok=True)
+        n_plot_traj = 20
+        indices = np.random.choice(n_points, n_plot_traj, replace=False)
+        selected_points = points[indices].copy()
+        t_plot = np.linspace(t_interval[0], t_interval[1], 100)
+        
+        for var_idx in range(n_vars):
+            plt.figure()
+            for i in range(n_plot_traj):
+                p0 = selected_points[i]
+                
+                pts = traj.forward(p0, t_plot)
+                vals = pts[:, var_idx]
+                
+                plt.plot(t_plot, vals, alpha=0.5, color='black')
+            
+            plt.xlabel("t")
+            plt.ylabel(f"var_{var_idx}")
+            plt.title(f"Trajectory of var_{var_idx} vs t")
+            plt.savefig(f"{plot_path}/trajectories/var_{var_idx}_vs_t.png")
+            plt.close()
+
     # Step 2 transport points alomg trajectories 
-    t=[]
+    t_list = []
     for point in points:
-        t_val, new_point = randomt_trajectory_displacement(point, t_interval, trajectory_type=traj_type, parameters=traj_params)
+        t_val = np.random.uniform(t_interval[0], t_interval[1])
+        new_point = traj.forward(point, t_val)
         point[:] = new_point  # Update point in place
-        t.append(t_val)
+        t_list.append(t_val)
 
     # Step 3 plot dataset
+    t = np.asarray(t_list)
     for i in range(n_vars):
         plt.figure()
         plt.scatter(t, points[:, i], s=1)
@@ -112,7 +127,7 @@ def generate_test_data_using_trajectories(n_vars=5, n_points=1000, t_interval=[-
         plt.grid()
         plt.savefig(f"{plot_path}variable_{i}_vs_time.png")
 
-    return points, np.asarray(t)
+    return points, t, traj
 
 
 def save_in_PAD_format(points, t, output_path, frame_key="data", time_key="t", original_key="orig"):
@@ -151,9 +166,9 @@ if __name__ == "__main__":
     seed = 42
     np.random.seed(seed)
 
-    output_path="/home/users/o/oleksiyu/WORK/weakly-supervised-search/user/test_runs/toy3/data/"
+    output_path="/home/users/o/oleksiyu/WORK/weakly-supervised-search/user/test_runs/toy3_just_data/data/"
     os.makedirs(output_path+"plots/", exist_ok=True)
-    points, t = generate_test_data_using_trajectories(
+    points, t, traj = generate_test_data_using_trajectories(
         n_vars=4,
         traj_params=create_random_quadratic_trajectory_params(len_=4),
         n_points=200000,
@@ -162,6 +177,11 @@ if __name__ == "__main__":
         traj_type="quadratic",
         plot_path=output_path+"plots/"
     )
+    
+    # Save trajectory object
+    with open(output_path + "trajectory.pkl", "wb") as f:
+        pickle.dump(traj, f)
+
     sb_data, sr_data = split_sb_sr(points, t, sr_interval=[-0.3, 0.3])
     save_in_PAD_format(sb_data[0], sb_data[1], output_path+"data/sb.h5")
     save_in_PAD_format(sr_data[0], sr_data[1], output_path+"data/sr.h5")

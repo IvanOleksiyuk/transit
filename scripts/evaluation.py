@@ -28,12 +28,17 @@ import wandb
 
 log = logging.getLogger(__name__)
 
-def equalise_to_min_len(arr1, arr2, max=None):
-    # shuffle array 1
+# For some reason breaks if shuffle=False
+# Namely:
+# wandb: evaluation/AUCBDTclasstest_laSB1nSB2vsSR 0.8275
+# wandb:    evaluation/AUCBDTclasstest_laSB1vsSB2 0.60662
+def equalise_to_min_len(arr1, arr2, max=None, shuffle=True):
     arr1 = copy.deepcopy(arr1)
-    np.random.shuffle(arr1)
+    if shuffle:
+        np.random.shuffle(arr1)
     arr2 = copy.deepcopy(arr2)
-    np.random.shuffle(arr2)
+    if shuffle:
+        np.random.shuffle(arr2)
     len1 = len(arr1)
     len2 = len(arr2)
     min_len = min(len1, len2)
@@ -160,30 +165,20 @@ def main(cfg):
 
     # Use a classifier test to evaluate the difference true and transported samples
     
+    n_max_class_train = cfg.step_evaluate.get("n_max_class_train", 100000)
     if getattr(cfg.step_evaluate, "bdt_two_sample_test_SBtoSB", True):
         from transit.srccwola.bdts import bdt_two_sample_test
         
         SB1_data, SB1_gen = equalise_to_min_len(
             data["target_for_SB1_data"].to_numpy()[:, :-1],
             data["SB1_gen_file"].to_numpy()[:, :-1],
-            max=cfg.step_evaluate.get("n_max_class_train", None)
+            max=n_max_class_train
         )
-        SB1_data = data["target_for_SB1_data"].to_numpy()[:, :-1]
-        SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
-        SB2_data = data["target_for_SB2_data"].to_numpy()[:, :-1]
-        SB2_gen = data["SB2_gen_file"].to_numpy()[:, :-1]
-        
-        # Limit the number of events to train the classifier on faster
-        n_max=cfg.step_evaluate.get("n_max_class_train", 50000)
-        if n_max is not None and n_max>0:
-            if len(SB1_data)>n_max:
-                SB1_data = SB1_data[:n_max]
-            if len(SB1_gen)>n_max:
-                SB1_gen = SB1_gen[:n_max]
-            if len(SB2_data)>n_max:
-                SB2_data = SB2_data[:n_max]
-            if len(SB2_gen)>n_max:
-                SB2_gen = SB2_gen[:n_max]
+        SB2_data, SB2_gen = equalise_to_min_len(
+            data["target_for_SB2_data"].to_numpy()[:, :-1],
+            data["SB2_gen_file"].to_numpy()[:, :-1],
+            max=n_max_class_train
+        )
 
         start_time = time.time()
         auc_score_1to2 = bdt_two_sample_test(
@@ -205,20 +200,12 @@ def main(cfg):
     if getattr(cfg.step_evaluate, "bdt_two_sample_test_SB1nSB2toSR", True):
         from transit.srccwola.bdts import bdt_two_sample_test
         
-        SR_data = data["target_data"].to_numpy()[:, :-1]
-        SB1toSR_gen = data["SB1toSR_gen_file"].to_numpy()[:, :-1]
-        SB2toSR_gen = data["SB2toSR_gen_file"].to_numpy()[:, :-1]
-        
-        # Limit the number of events to train the classifier on faster
-        n_max=cfg.step_evaluate.get("n_max_class_train", 50000)
-        if n_max is not None and n_max>0:
-            if len(SR_data)>n_max:
-                SR_data = SR_data[:n_max]
-            if len(SB1toSR_gen)>n_max:
-                SB1toSR_gen = SB1toSR_gen[:n_max]
-            if len(SB2toSR_gen)>n_max:
-                SB2toSR_gen = SB2toSR_gen[:n_max]
-            
+        SR_data, SB1toSR_gen = equalise_to_min_len(
+            data["target_data"].to_numpy()[:, :-1],
+            data["SB1toSR_gen_file"].to_numpy()[:, :-1],
+            max=n_max_class_train
+        )
+
         start_time = time.time()
         auc_score_SB1toSR = bdt_two_sample_test(
             SB1toSR_gen, 
@@ -229,6 +216,12 @@ def main(cfg):
         wandb.log({"evaluation/AUCBDTclasstest_SB1toSR": auc_score_SB1toSR})
         results["AUCBDTclasstest_SB1toSR"] = auc_score_SB1toSR
         
+        SR_data, SB2toSR_gen = equalise_to_min_len(
+            data["target_data"].to_numpy()[:, :-1],
+            data["SB2toSR_gen_file"].to_numpy()[:, :-1],
+            max=n_max_class_train
+        )
+
         start_time = time.time()
         auc_score_SB2toSR = bdt_two_sample_test(
             SB2toSR_gen, 
@@ -240,16 +233,11 @@ def main(cfg):
     if getattr(cfg.step_evaluate, "bdt_two_sample_test_La_SB1nSB2vsSR", True):
         from transit.srccwola.bdts import bdt_two_sample_test
         
-        SR_data = data["laSR_file"].to_numpy()
-        SB_data = data["laSB_file"].to_numpy()
-        
-        # Limit the number of events to train the classifier on faster
-        n_max=cfg.step_evaluate.get("n_max_class_train", 50000)
-        if n_max is not None and n_max>0:
-            if len(SR_data)>n_max:
-                SR_data = SR_data[:n_max]
-            if len(SB_data)>n_max:
-                SB_data = SB_data[:n_max]
+        SR_data, SB_data = equalise_to_min_len(
+            data["laSR_file"].to_numpy(),
+            data["laSB_file"].to_numpy(),
+            max=n_max_class_train
+        )
             
         start_time = time.time()
         AUCBDTclasstest_laSB1nSB2vsSR = bdt_two_sample_test(
@@ -261,19 +249,52 @@ def main(cfg):
         log.info(f"laSB1nSB2 vs laSR AUC={AUCBDTclasstest_laSB1nSB2vsSR:.3f}")
         wandb.log({"evaluation/AUCBDTclasstest_laSB1nSB2vsSR": AUCBDTclasstest_laSB1nSB2vsSR})
         results["AUCBDTclasstest_laSB1nSB2vsSR"] = AUCBDTclasstest_laSB1nSB2vsSR
+    if getattr(cfg.step_evaluate, "bdt_two_sample_test_La_SB1vsSR", True):
+        from transit.srccwola.bdts import bdt_two_sample_test
+        
+        SR_data, SB1_data = equalise_to_min_len(
+            data["laSR_file"].to_numpy(),
+            data["laSB1_file"].to_numpy(),
+            max=n_max_class_train
+        )
+            
+        start_time = time.time()
+        AUCBDTclasstest_laSB1vsSR = bdt_two_sample_test(
+            SB1_data, 
+            SR_data)
+        end_time = time.time()
+        log.info(f"Finish classifier train/eval (took {end_time - start_time} seconds)")
+        
+        log.info(f"laSB1 vs laSR AUC={AUCBDTclasstest_laSB1vsSR:.3f}")
+        wandb.log({"evaluation/AUCBDTclasstest_laSB1vsSR": AUCBDTclasstest_laSB1vsSR})
+        results["AUCBDTclasstest_laSB1vsSR"] = AUCBDTclasstest_laSB1vsSR
+    if getattr(cfg.step_evaluate, "bdt_two_sample_test_La_SB2vsSR", True):
+        from transit.srccwola.bdts import bdt_two_sample_test
+        
+        SR_data, SB2_data = equalise_to_min_len(
+            data["laSR_file"].to_numpy(),
+            data["laSB2_file"].to_numpy(),
+            max=n_max_class_train
+        )
+            
+        start_time = time.time()
+        AUCBDTclasstest_laSB2vsSR = bdt_two_sample_test(
+            SB2_data, 
+            SR_data)
+        end_time = time.time()
+        log.info(f"Finish classifier train/eval (took {end_time - start_time} seconds)")
+        
+        log.info(f"laSB2 vs laSR AUC={AUCBDTclasstest_laSB2vsSR:.3f}")
+        wandb.log({"evaluation/AUCBDTclasstest_laSB2vsSR": AUCBDTclasstest_laSB2vsSR})
+        results["AUCBDTclasstest_laSB2vsSR"] = AUCBDTclasstest_laSB2vsSR
     if getattr(cfg.step_evaluate, "bdt_two_sample_test_La_SB1vsSB2", True):
         from transit.srccwola.bdts import bdt_two_sample_test
         
-        SB1_data = data["laSB1_file"].to_numpy()
-        SB2_data = data["laSB2_file"].to_numpy()
-        
-        # Limit the number of events to train the classifier on faster
-        n_max=cfg.step_evaluate.get("n_max_class_train", 50000)
-        if n_max is not None and n_max>0:
-            if len(SB1_data)>n_max:
-                SB1_data = SB1_data[:n_max]
-            if len(SB2_data)>n_max:
-                SB2_data = SB2_data[:n_max]
+        SB1_data, SB2_data = equalise_to_min_len(
+            data["laSB1_file"].to_numpy(),
+            data["laSB2_file"].to_numpy(),
+            max=n_max_class_train
+        )
             
         start_time = time.time()
         auc_score_SB1vsSB2 = bdt_two_sample_test(
@@ -374,7 +395,12 @@ def main(cfg):
                 save_name="SB1_to_SB2")
             log.info(f"Plotted SB1 to SB2 transport: {cfg.general.run_dir}/plots/SB1_to_SB2.png")
 
-
+    jsonpickle_file = Path(cfg.general.run_dir) / "evaluation_results.json"
+    with open(jsonpickle_file, "wb") as f:
+        import jsonpickle
+        frozen = jsonpickle.encode(results)
+        f.write(frozen.encode('utf-8'))
+    
     # Some old stuff for SKY classifier evaluation
     if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB_transport", False):
         if getattr(cfg.step_evaluate, "classifier_for_test", "SKY") == "SKY":

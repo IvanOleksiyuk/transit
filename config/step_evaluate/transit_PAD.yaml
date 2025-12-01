@@ -3,15 +3,29 @@ data:
   target_data: ${data.evaluation.target_data} # Updated to point to SR data
   template_file:  ${general.run_dir}/template/outputs/template_sample.h5
   laSB_file: ${general.run_dir}/template/outputs/latransit_sb.h5
+  laSB1_file: ${general.run_dir}/template/outputs/latransit_sb1.h5
+  laSB2_file: ${general.run_dir}/template/outputs/latransit_sb2.h5
   laSR_file: ${general.run_dir}/template/outputs/latransit_sr.h5
-  #laTM_file: ${general.run_dir}/template/outputs/latransit_tm.h5
+  SB1toSR_gen_file: ${general.run_dir}/template/outputs/SB1toSR_gen_sample.h5
+  SB2toSR_gen_file: ${general.run_dir}/template/outputs/SB2toSR_gen_sample.h5
+  original_for_SB1_data: ${data.export_SB1}
+  original_for_SB2_data: ${data.export_SB2}
+  target_for_SB1_data: ${data.export_SB2} 
+  target_for_SB2_data: ${data.export_SB1} 
+  SB1_gen_file: ${general.run_dir}/template/outputs/SB1_gen_sample.h5
+  SB2_gen_file: ${general.run_dir}/template/outputs/SB2_gen_sample.h5
 
 x_bounds: [null, null]
 debug_eval: False
 get_best: False
 do_2d_hist_instead_of_contour: True
 
+plot_contour_SB1toSB2transport: True
+bdt_two_sample_test_SBtoSB_transport: True
+bdt_two_sample_test_SBtoSR: True
 plot_everything_else: False
+
+classifier_for_test: DEFAULT
 
 procedures: null
 n_max_class_train: 10000
