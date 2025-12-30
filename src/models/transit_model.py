@@ -163,7 +163,7 @@ class TRANSIT(LightningModule):
             self.encoder2 = lambda x: x
         else:
             assert False, "Unknown network type"
-        
+
         self.add_standardizing_layer = add_standardizing_layer
         if add_standardizing_layer:
             self.std_layer_x = IterativeNormLayer(x_dim)
@@ -474,9 +474,13 @@ class TRANSIT(LightningModule):
 
     def adversarial_loss(self, y_hat, y):
         if self.adversarial_cfg.loss_function=="binary_cross_entropy":
-            return F.binary_cross_entropy(y_hat, y.reshape((-1, 1))).mean()
+            return F.binary_cross_entropy(y_hat, y.reshape((-1, 1)))
+        if self.adversarial_cfg.loss_function=="binary_cross_entropy_with_logits":
+            return F.binary_cross_entropy_with_logits(y_hat, y.reshape((-1, 1)))
         elif self.adversarial_cfg.loss_function=="mse":
-            return mse_loss(y_hat, y.reshape((-1, 1))).mean()
+            return mse_loss(y_hat, y.reshape((-1, 1)))
+        elif self.adversarial_cfg.loss_function=="WGAN":
+            return - 2 * torch.mean(y_hat * (y.reshape((-1, 1))-0.5))
 
     def training_step(self, sample: tuple, batch_idx: int) -> torch.Tensor:
 
@@ -498,10 +502,12 @@ class TRANSIT(LightningModule):
             labels = torch.cat([torch.ones(batch_size), torch.zeros(batch_size)]).type_as(w2_perm)
             e1_copy = e1.clone()
             generated = self.decode(e1, e2[rpm])
-            if self.adversarial_cfg.loss_function=="binary_cross_entropy":
+            if self.adversarial_cfg.loss_function in ["binary_cross_entropy", "binary_cross_entropy_with_logits"]:
                 threshold=np.log(2)
             elif self.adversarial_cfg.loss_function=="mse":
                 threshold=0.25
+            elif self.adversarial_cfg.loss_function=="WGAN":
+                threshold=100000
             # train discriminator
             # Measure discriminator's ability to classify encoded samples with correct mass and encoded samples with incorrect mass
             allow_gen_train = True
@@ -596,7 +602,7 @@ class TRANSIT(LightningModule):
             total_loss = self._shared_step(sample, step_type="train", _batch_index=batch_idx)
             return total_loss
 
-    def _draw_event_transport_trajectories(self, w1_, m_pair_, var, var_name, masses="auto", max_traj=20, plot_second_derivative=True):
+    def _draw_event_transport_trajectories(self, w1_, m_pair_, var, var_name, masses="auto", max_traj=20, plot_second_derivative=False):
         import gc
         if self.true_trajectory_function is not None and max_traj>10:
             max_traj=10
@@ -714,6 +720,7 @@ class TRANSIT(LightningModule):
     def _draw_event_transport_trajectories_2nd_der(self, w1_, m_pair_, var, var_name, masses=None, max_traj=20):
         w1 = copy.deepcopy(w1_)[:max_traj]
         m_pair_ = m_pair_[:max_traj]
+        
         if masses is None:
             if self.loss_cfg.second_derivative_smoothness is not None:
                 masses = np.arange(-4, 4, self.loss_cfg.second_derivative_smoothness.step)
