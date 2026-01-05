@@ -117,6 +117,7 @@ class TRANSIT(LightningModule):
                 self.adversarial = "default"
             self.automatic_optimization = False
             self.adversarial_cfg = adversarial_cfg
+            self.disc_input_noise_std = getattr(adversarial_cfg, "disc_input_noise_std", 0.0)
 
             if not hasattr(adversarial_cfg, "g_loss_weight_in_warmup"):
                 setattr(adversarial_cfg, "g_loss_weight_in_warmup", True)
@@ -130,6 +131,7 @@ class TRANSIT(LightningModule):
                 self.gradient_clip_val = adversarial_cfg.gradient_clip_val
         else:
             self.adversarial = False
+            self.disc_input_noise_std = 0.0
         if true_trajectory_pickle_file is not None:
             self.true_trajectory_function = pickle.load(open(true_trajectory_pickle_file, "rb"))
         else:
@@ -207,16 +209,17 @@ class TRANSIT(LightningModule):
 
         # For more stable checks in the shared step
         expected_attrs = ["reco", 
-                        "consistency_x", 
-                        "consistency_xx", 
-                        "consistency_cont", 
-                        "latent_variance_cfg", 
-                        "l1_reg", 
-                        "DisCO_loss_cfg", 
-                        "pearson_loss_cfg", 
-                        "attractive", 
-                        "repulsive", 
-                        "second_derivative_smoothness"]
+                "consistency_x", 
+                "consistency_xx", 
+                "consistency_cont", 
+                "latent_variance_cfg", 
+                "l1_reg", 
+                "DisCO_loss_cfg", 
+                "pearson_loss_cfg", 
+                "attractive", 
+                "repulsive", 
+                "second_derivative_smoothness",
+                "third_derivative_smoothness"]
         for attr in list(self.loss_cfg.keys()):
             if attr in expected_attrs:
                 setattr(self.loss_cfg, attr, getattr(self.loss_cfg, attr, None))
@@ -284,6 +287,12 @@ class TRANSIT(LightningModule):
         if isinstance(cfg, Mapping):
             return cfg.get(key, default)
         return getattr(cfg, key, default)
+
+    def _add_disc_noise(self, *tensors):
+        if self.disc_input_noise_std <= 0:
+            return tensors if len(tensors) > 1 else tensors[0]
+        noisy = [t + torch.randn_like(t) * self.disc_input_noise_std for t in tensors]
+        return noisy if len(noisy) > 1 else noisy[0]
 
     def _compute_mmd(self, x_real, m_real, x_fake, m_fake):
         # Product of RBF kernels on features and mass; multi-bandwidth for robustness.
@@ -454,6 +463,34 @@ class TRANSIT(LightningModule):
                     total_loss += loss_sec_der*w
                     self.log(f"{step_type}_debug/second_derivative_smoothnessw", w)
 
+        # Third derivative smoothness (5-point central finite difference)
+        if self.loss_cfg.third_derivative_smoothness is not None:
+            step_val = self.loss_cfg.third_derivative_smoothness.step
+            if step_val == 0:
+                raise ValueError("third_derivative_smoothness.step must be non-zero")
+
+            e2_m2 = self.encode_style(m_add - 2 * step_val)[rpm]
+            e2_m1 = self.encode_style(m_add - step_val)[rpm]
+            e2_p1 = self.encode_style(m_add + step_val)[rpm]
+            e2_p2 = self.encode_style(m_add + 2 * step_val)[rpm]
+
+            recon_m2 = self.decode(content, e2_m2)
+            recon_m1 = self.decode(content, e2_m1)
+            recon_p1 = self.decode(content, e2_p1)
+            recon_p2 = self.decode(content, e2_p2)
+
+            loss_third_der = (recon_m2 - 2 * recon_m1 + 2 * recon_p1 - recon_p2) / (2 * (step_val ** 3))
+            loss_third_der = loss_third_der.abs().mean()
+            self.log(f"{step_type}/loss_third_der_smooth", loss_third_der)
+
+            if self.loss_cfg.third_derivative_smoothness.w is not None:
+                if isinstance(self.loss_cfg.third_derivative_smoothness.w, (float, int)):
+                    total_loss += loss_third_der * self.loss_cfg.third_derivative_smoothness.w
+                else:
+                    w = self.loss_cfg.third_derivative_smoothness.w(self.global_step)
+                    total_loss += loss_third_der * w
+                    self.log(f"{step_type}_debug/third_derivative_smoothnessw", w)
+
         # Consistency losses 
         if self.loss_cfg.consistency_x is not None:
             loss_back_vec = mse_loss(content, content_n).mean()
@@ -601,8 +638,11 @@ class TRANSIT(LightningModule):
             allow_gen_train = True
             if self.current_epoch>=self.adversarial_cfg.warmup or self.adversarial_cfg.train_dis_in_warmup:
                 if self.use_disc_lat:
-                    # Train discriminator for latent space
-                    d_loss = self.adversarial_loss(self.disc_lat(torch.cat([e1, e1_copy], dim=0), torch.cat([w2, w2_perm], dim=0)), labels)
+                    # Train discriminator for latent space (with optional input noise)
+                    e_lat = torch.cat([e1, e1_copy], dim=0)
+                    m_lat = torch.cat([w2, w2_perm], dim=0)
+                    e_lat, m_lat = self._add_disc_noise(e_lat, m_lat)
+                    d_loss = self.adversarial_loss(self.disc_lat(e_lat, m_lat), labels)
                     self.toggle_optimizer(optimizer_d)
                     self.log("d_loss", d_loss, prog_bar=True)
                     self.zero_grad()
@@ -614,11 +654,14 @@ class TRANSIT(LightningModule):
                     d_loss = 0
                 
                 if self.use_disc_reco:
-                    # Train discriminator for reconstruction/transport
+                    # Train discriminator for reconstruction/transport (with optional input noise)
+                    reco_in = torch.cat([w1, generated], dim=0)
                     if self.use_disc_reco_doublecond:
-                        d_loss_gen = self.adversarial_loss(self.disc_reco(torch.cat([w1, generated], dim=0), torch.cat([torch.cat([w2, w2_perm], dim=0), torch.cat([w2_perm, w2], dim=0)], dim=1)),  labels)
+                        reco_ctxt = torch.cat([torch.cat([w2, w2_perm], dim=0), torch.cat([w2_perm, w2], dim=0)], dim=1)
                     else:
-                        d_loss_gen = self.adversarial_loss(self.disc_reco(torch.cat([w1, generated], dim=0), torch.cat([w2, w2_perm], dim=0)),  labels)  
+                        reco_ctxt = torch.cat([w2, w2_perm], dim=0)
+                    reco_in, reco_ctxt = self._add_disc_noise(reco_in, reco_ctxt)
+                    d_loss_gen = self.adversarial_loss(self.disc_reco(reco_in, reco_ctxt),  labels)  
                         
                     self.toggle_optimizer(optimizer_d2)
                     self.log("d_loss_gen", d_loss_gen, prog_bar=True)
@@ -666,13 +709,19 @@ class TRANSIT(LightningModule):
                         g_loss_gen_weight = self.adversarial_cfg.g_loss_gen_weight(self.global_step)
                         self.log("g_loss_gen_weight", g_loss_gen_weight)
                     if self.use_disc_lat:
-                        g_loss = - self.adversarial_loss(self.disc_lat(torch.cat([e1, e1_copy], dim=0), torch.cat([w2, w2_perm], dim=0)), labels)
+                        e_lat = torch.cat([e1, e1_copy], dim=0)
+                        m_lat = torch.cat([w2, w2_perm], dim=0)
+                        e_lat, m_lat = self._add_disc_noise(e_lat, m_lat)
+                        g_loss = - self.adversarial_loss(self.disc_lat(e_lat, m_lat), labels)
                         total_loss2 += g_loss*g_loss_weight
                     if self.use_disc_reco:
+                        reco_in = torch.cat([w1, generated], dim=0)
                         if self.use_disc_reco_doublecond:
-                            g_loss_gen = - self.adversarial_loss(self.disc_reco(torch.cat([w1, generated], dim=0), torch.cat([torch.cat([w2, w2_perm], dim=0), torch.cat([w2_perm, w2], dim=0)], dim=1)),  labels) 
+                            reco_ctxt = torch.cat([torch.cat([w2, w2_perm], dim=0), torch.cat([w2_perm, w2], dim=0)], dim=1)
                         else:
-                            g_loss_gen = - self.adversarial_loss(self.disc_reco(torch.cat([w1, generated], dim=0), torch.cat([w2, w2_perm], dim=0)),  labels)  
+                            reco_ctxt = torch.cat([w2, w2_perm], dim=0)
+                        reco_in, reco_ctxt = self._add_disc_noise(reco_in, reco_ctxt)
+                        g_loss_gen = - self.adversarial_loss(self.disc_reco(reco_in, reco_ctxt),  labels)  
                         total_loss2 += g_loss_gen*g_loss_gen_weight
                 else:
                     total_loss2 = total_loss

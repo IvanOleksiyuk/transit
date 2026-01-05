@@ -16,6 +16,9 @@ template_training:
           add_seed: 1000
         - _target_: src.data.process.ProcessorKeepFrames
           frame_names_to_keep: ["data", "cond"]
+        - _target_: src.data.process.ProcessorTrainValidSplit
+          train_frac: 0.8
+          random_state: ${general.seed}
         - _target_: src.data.process.ProcessorFlatMassResampling
           mass_frame: "cond"
           mass_variable: "m_jj"
@@ -36,6 +39,9 @@ template_training:
             mass_add: ["m_jj"]
         - _target_: src.data.process.ProcessorKeepFrames
           frame_names_to_keep: ["mass_add"]
+        - _target_: src.data.process.ProcessorTrainValidSplit
+          train_frac: 0.8
+          random_state: ${general.seed}
         - _target_: src.data.process.ProcessorFlatMassResampling
           mass_frame: "mass_add"
           mass_variable: "m_jj"

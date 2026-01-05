@@ -5,7 +5,7 @@ defaults:
   - step_train_template: transitv_0v2
   - step_export_template: transit
   - step_evaluate: transit_PAD
-  - override /step_train_template/model: TRANSITpad2v05011.yaml
+  - override /step_train_template/model: TRANSITpad2v0.yaml
   - _self_
 
 step_train_template:
@@ -36,7 +36,7 @@ data:
 verbose_validation: True
 
 general:
-  name: TRANSITpad2v05011
+  name: TRANSITpad2v05010
   seed: 12345 # For reproducibility
   run_dir: /transit #workspaces/${general.subfolder}${general.name}
   do_dataset_plots: False
