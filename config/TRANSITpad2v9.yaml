@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - data: PAD_DEFAULT_flatmass_testing
+  - data: PAD_DEFAULT_flatmass
   - step_train_template: transitv_0v2
   - step_export_template: transit
   - step_export_latent: latent_sb1_sb2_sb_sr
@@ -10,7 +10,7 @@ defaults:
   - step_export_SB1toSR: default
   - step_export_SB2toSR: default
   - step_evaluate: transit_PAD
-  - override /step_train_template/model: TRANSITpad2v02012.yaml
+  - override /step_train_template/model: TRANSITpad2v9.yaml
   - _self_
 
 step_train_template:
@@ -19,10 +19,9 @@ step_train_template:
   trainer:
     check_val_every_n_epoch: 1
   preprocessing_pkl: ${general.run_dir}/../data/data/preprocessor.pkl
+  valid_plot_freq: 10
 
-SB1SRSB2_edges: null # PROVIDE THIS VALUE FROM THE COMMAND LINE
-
-delete_existing_run_dir: True
+delete_existing_run_dir: False
 
 do_train_template: True
 do_export_template: True
@@ -39,7 +38,7 @@ data:
 verbose_validation: True
 
 general:
-  name: TRANSITpad2v02012
+  name: TRANSITpad2v9
   seed: 12345 # For reproducibility
   run_dir: /transit #workspaces/${general.subfolder}${general.name}
   do_dataset_plots: False

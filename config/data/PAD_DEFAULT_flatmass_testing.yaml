@@ -1,0 +1,392 @@
+training_batch_size: 2048
+
+template_training:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data:
+    _target_: src.data.data.CombDataset
+    dataset1: 
+      _target_: src.data.data.InMemoryDataFrameDict
+      list_order: ["data", "cond"]
+      file_path: "${general.run_dir}/../data/data/sb.h5"
+      plotting_path: "${general.run_dir}/plots/sb"
+      processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 1000
+        - _target_: src.data.process.ProcessorKeepFrames
+          frame_names_to_keep: ["data", "cond"]
+        - _target_: src.data.process.ProcessorTrainValidSplit
+          train_frac: 0.8
+          random_state: ${general.seed}
+        - _target_: src.data.process.ProcessorFlatMassResamplingSmartKNN
+          mass_frame: "cond"
+          mass_variable: "m_jj"
+          n_bins: 20
+          plot_path: "${general.run_dir}/plots/sb/m_jj_flat_resampling.png"
+    dataset2:
+      _target_: src.data.data.InMemoryDataFrameDict
+      file_path: ["${general.run_dir}/../data/data/sb.h5", "${general.run_dir}/../data/data/sr.h5"]
+      plotting_path: "${general.run_dir}/plots/sbsr"
+      list_order: ["mass_add"]
+      processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 2000
+        - _target_: src.data.process.ProcessorSplitDataFrameVars
+          frame_name: "cond"
+          new_df_dict:
+            mass_add: ["m_jj"]
+        - _target_: src.data.process.ProcessorKeepFrames
+          frame_names_to_keep: ["mass_add"]
+        - _target_: src.data.process.ProcessorTrainValidSplit
+          train_frac: 0.8
+          random_state: ${general.seed}
+        - _target_: src.data.process.ProcessorFlatMassResamplingSmart
+          mass_frame: "mass_add"
+          mass_variable: "m_jj"
+          n_bins: 50
+          plot_path: "${general.run_dir}/plots/sbsr/m_jj_flat_resampling.png"
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: true
+    persistent_workers: True
+
+
+
+# Please change everything that goes below!!!
+export_template:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data: null
+  test_data:
+    _target_: src.data.data.CombDataset
+    dataset1: 
+      _target_: src.data.data.InMemoryDataFrameDict
+      list_order: ["data", "cond"]
+      file_path: "${general.run_dir}/../data/data/sb.h5"
+      plotting_path: "${general.run_dir}/plots/sb"
+      processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 1000
+        - _target_: src.data.process.ProcessorKeepFrames
+          frame_names_to_keep: ["data", "cond"]
+    dataset2:
+      _target_: src.data.data.InMemoryDataFrameDict
+      file_path: "${general.run_dir}/../data/data/sr.h5"
+      plotting_path: "${general.run_dir}/../data/plots/sr"
+      list_order: ["mass_add"]
+      processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 2000
+        - _target_: src.data.process.ProcessorSplitDataFrameVars
+          frame_name: "cond"
+          new_df_dict:
+            mass_add: ["m_jj"]
+        - _target_: src.data.process.ProcessorKeepFrames
+          frame_names_to_keep: ["mass_add"]
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: true
+    persistent_workers: True
+
+evaluation:
+  target_data: 
+    _target_: src.data.data.InMemoryDataFrameDict
+    file_path: "${general.run_dir}/../data/data/sr.h5"
+    plotting_path: null
+    list_order: ["mass_add"]
+    processor_cfg:
+      - _target_: src.data.process.ProcessorShuffle
+        random_state: ${general.seed}
+        add_seed: 2000
+      - _target_: src.data.process.ProcessorMergeFrames
+        frame_names: ["data", "cond"]
+        new_frame_name: "data"
+
+        
+export_latent_sb:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data: null
+  test_data:
+    _target_: src.data.data.InMemoryDataFrameDict
+    list_order: ["data", "cond"]
+    file_path: "${general.run_dir}/../data/data/sb.h5"
+    plotting_path: null
+    processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 1000
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: false
+    persistent_workers: True
+
+export_latent_sr:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data: null
+  test_data:
+    _target_: src.data.data.InMemoryDataFrameDict
+    list_order: ["data", "cond"]
+    file_path: "${general.run_dir}/../data/data/sr.h5"
+    plotting_path: null
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: false
+    persistent_workers: True
+
+export_latent_sb1:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data: null
+  test_data:
+    _target_: src.data.data.InMemoryDataFrameDict
+    list_order: ["data", "cond"]
+    file_path: "${general.run_dir}/../data/data/sb.h5"
+    plotting_path: "${general.run_dir}/plots/sb1"
+    processor_cfg:
+      - _target_: src.data.process.ProcessorShuffle
+        random_state: ${general.seed}
+        add_seed: 1000
+      - _target_: src.data.process.ProcessorSelectSidebands
+        mode: "SB1"
+        SB1SRSB2_edges: ${data.SB1SRSB2_edges}
+        scalar_df_name: "orig"
+        var_name: "m_jj"
+      - _target_: src.data.process.ProcessorKeepFrames
+        frame_names_to_keep: ["data", "cond"]
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: true
+    persistent_workers: True
+
+export_latent_sb2:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data: null
+  test_data:
+    _target_: src.data.data.InMemoryDataFrameDict
+    list_order: ["data", "cond"]
+    file_path: "${general.run_dir}/../data/data/sb.h5"
+    plotting_path: "${general.run_dir}/plots/sb2"
+    processor_cfg:
+      - _target_: src.data.process.ProcessorShuffle
+        random_state: ${general.seed}
+        add_seed: 1000
+      - _target_: src.data.process.ProcessorSelectSidebands
+        mode: "SB2"
+        SB1SRSB2_edges: ${data.SB1SRSB2_edges}
+        scalar_df_name: "orig"
+        var_name: "m_jj"
+      - _target_: src.data.process.ProcessorKeepFrames
+        frame_names_to_keep: ["data", "cond"]
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: true
+    persistent_workers: True
+
+# All the difeferent export for SB1 and SB2
+export_SB1:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data: null
+  test_data:
+    _target_: src.data.data.CombDataset
+    dataset1: 
+      _target_: src.data.data.InMemoryDataFrameDict
+      list_order: ["data", "cond"]
+      file_path: "${general.run_dir}/../data/data/sb.h5"
+      plotting_path: "${general.run_dir}/plots/sb2"
+      processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 1000
+        - _target_: src.data.process.ProcessorSelectSidebands
+          mode: "SB2"
+          SB1SRSB2_edges: ${data.SB1SRSB2_edges}
+          scalar_df_name: "orig"
+          var_name: "m_jj"
+        - _target_: src.data.process.ProcessorKeepFrames
+          frame_names_to_keep: ["data", "cond"]
+    dataset2:
+      _target_: src.data.data.InMemoryDataFrameDict
+      file_path: "${general.run_dir}/../data/data/sb.h5"
+      plotting_path: "${general.run_dir}/../data/plots/sb1"
+      list_order: ["mass_add"]
+      processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 2000
+        - _target_: src.data.process.ProcessorSelectSidebands
+          mode: "SB1"
+          SB1SRSB2_edges: ${data.SB1SRSB2_edges}
+          scalar_df_name: "orig"
+          var_name: "m_jj"
+        - _target_: src.data.process.ProcessorSplitDataFrameVars
+          frame_name: "cond"
+          new_df_dict:
+            mass_add: ["m_jj"]
+        - _target_: src.data.process.ProcessorKeepFrames
+          frame_names_to_keep: ["mass_add"]
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: true
+    persistent_workers: True
+
+
+export_SB2:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data: null
+  test_data:
+    _target_: src.data.data.CombDataset
+    dataset1: 
+      _target_: src.data.data.InMemoryDataFrameDict
+      list_order: ["data", "cond"]
+      file_path: "${general.run_dir}/../data/data/sb.h5"
+      plotting_path: "${general.run_dir}/plots/sb1"
+      processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 1000
+        - _target_: src.data.process.ProcessorSelectSidebands
+          mode: "SB1"
+          SB1SRSB2_edges: ${data.SB1SRSB2_edges}
+          scalar_df_name: "orig"
+          var_name: "m_jj"
+        - _target_: src.data.process.ProcessorKeepFrames
+          frame_names_to_keep: ["data", "cond"]
+    dataset2:
+      _target_: src.data.data.InMemoryDataFrameDict
+      file_path: "${general.run_dir}/../data/data/sb.h5"
+      plotting_path: "${general.run_dir}/../data/plots/sb2"
+      list_order: ["mass_add"]
+      processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 2000
+        - _target_: src.data.process.ProcessorSelectSidebands
+          mode: "SB2"
+          SB1SRSB2_edges: ${data.SB1SRSB2_edges}
+          scalar_df_name: "orig"
+          var_name: "m_jj"
+        - _target_: src.data.process.ProcessorSplitDataFrameVars
+          frame_name: "cond"
+          new_df_dict:
+            mass_add: ["m_jj"]
+        - _target_: src.data.process.ProcessorKeepFrames
+          frame_names_to_keep: ["mass_add"]
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: true
+    persistent_workers: True
+
+
+export_SB1toSR:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data: null
+  test_data:
+    _target_: src.data.data.CombDataset
+    dataset1: 
+      _target_: src.data.data.InMemoryDataFrameDict
+      list_order: ["data", "cond"]
+      file_path: "${general.run_dir}/../data/data/sb.h5"
+      plotting_path: "${general.run_dir}/plots/sb2"
+      processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 1000
+        - _target_: src.data.process.ProcessorSelectSidebands
+          mode: "SB1"
+          SB1SRSB2_edges: ${data.SB1SRSB2_edges}
+          scalar_df_name: "orig"
+          var_name: "m_jj"
+        - _target_: src.data.process.ProcessorKeepFrames
+          frame_names_to_keep: ["data", "cond"]
+    dataset2:
+      _target_: src.data.data.InMemoryDataFrameDict
+      file_path: "${general.run_dir}/../data/data/sr.h5"
+      plotting_path: "${general.run_dir}/../data/plots/sr"
+      list_order: ["mass_add"]
+      processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 2000
+        - _target_: src.data.process.ProcessorSplitDataFrameVars
+          frame_name: "cond"
+          new_df_dict:
+            mass_add: ["m_jj"]
+        - _target_: src.data.process.ProcessorKeepFrames
+          frame_names_to_keep: ["mass_add"]
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: true
+    persistent_workers: True
+
+
+export_SB2toSR:
+  _target_: src.data.data.SimpleDataModule
+  train_frac: 0.8
+  train_data: null
+  test_data:
+    _target_: src.data.data.CombDataset
+    dataset1: 
+      _target_: src.data.data.InMemoryDataFrameDict
+      list_order: ["data", "cond"]
+      file_path: "${general.run_dir}/../data/data/sb.h5"
+      plotting_path: "${general.run_dir}/plots/sb2"
+      processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 1000
+        - _target_: src.data.process.ProcessorSelectSidebands
+          mode: "SB2"
+          SB1SRSB2_edges: ${data.SB1SRSB2_edges}
+          scalar_df_name: "orig"
+          var_name: "m_jj"
+        - _target_: src.data.process.ProcessorKeepFrames
+          frame_names_to_keep: ["data", "cond"]
+    dataset2:
+      _target_: src.data.data.InMemoryDataFrameDict
+      file_path: "${general.run_dir}/../data/data/sr.h5"
+      plotting_path: "${general.run_dir}/../data/plots/sr"
+      list_order: ["mass_add"]
+      processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 2000
+        - _target_: src.data.process.ProcessorSplitDataFrameVars
+          frame_name: "cond"
+          new_df_dict:
+            mass_add: ["m_jj"]
+        - _target_: src.data.process.ProcessorKeepFrames
+          frame_names_to_keep: ["mass_add"]
+  loader_kwargs:
+    pin_memory: true
+    batch_size: ${data.training_batch_size}
+    num_workers: 16
+    drop_last: true
+    persistent_workers: True

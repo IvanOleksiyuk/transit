@@ -29,9 +29,17 @@ def epoch_milestone_list_scale(array, scale):
     return new_array
 
 def update_sheduler_cfgs(cfg, epoch_scale):
-    cfg.model.adversarial_cfg.scheduler.scheduler_g.milestones = epoch_milestone_list_scale(cfg.model.adversarial_cfg.scheduler.scheduler_g.milestones, epoch_scale)
-    cfg.model.adversarial_cfg.scheduler.scheduler_d.milestones = epoch_milestone_list_scale(cfg.model.adversarial_cfg.scheduler.scheduler_d.milestones, epoch_scale)
-    cfg.model.adversarial_cfg.scheduler.scheduler_d2.milestones = epoch_milestone_list_scale(cfg.model.adversarial_cfg.scheduler.scheduler_d2.milestones, epoch_scale)
+    # Skip if no adversarial scheduler is defined (e.g., MMD/energy mode)
+    adv = getattr(cfg.model, "adversarial_cfg", None)
+    if adv is None or adv.get("scheduler") is None:
+        return
+    sched = adv.scheduler
+    if getattr(sched, "scheduler_g", None) is not None:
+        sched.scheduler_g.milestones = epoch_milestone_list_scale(sched.scheduler_g.milestones, epoch_scale)
+    if getattr(sched, "scheduler_d", None) is not None:
+        sched.scheduler_d.milestones = epoch_milestone_list_scale(sched.scheduler_d.milestones, epoch_scale)
+    if getattr(sched, "scheduler_d2", None) is not None:
+        sched.scheduler_d2.milestones = epoch_milestone_list_scale(sched.scheduler_d2.milestones, epoch_scale)
     
     cfg.trainer.max_epochs = max(math.ceil(cfg.trainer.max_epochs*epoch_scale), 1)
     cfg.model.adversarial_cfg.warmup = max(math.ceil(cfg.model.adversarial_cfg.warmup*epoch_scale), 1)

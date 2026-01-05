@@ -9,6 +9,7 @@ import copy
 from functools import partial
 from typing import Any, Mapping
 import pickle
+from types import SimpleNamespace
 
 # torch related
 from torch import nn
@@ -65,6 +66,8 @@ class TRANSIT(LightningModule):
         latent_dim2: int = None, 
         var_group_list: list = None,
         loss_cfg: Mapping = None,
+        transport_loss: str = "adversarial",
+        mmd_cfg: Mapping | None = None,
         use_m_encodig = True,
         input_noise_cfg=None,
         reverse_pass_mode=None,
@@ -95,7 +98,19 @@ class TRANSIT(LightningModule):
         self.valid_plot_freq = valid_plot_freq
         self.input_type=input_type
         self.afterglow_epoch = afterglow_epoch
-        if adversarial_cfg is not None:
+        self.transport_loss_mode = transport_loss
+        if mmd_cfg is None:
+            self.mmd_cfg = SimpleNamespace()
+        elif isinstance(mmd_cfg, Mapping):
+            self.mmd_cfg = SimpleNamespace(**dict(mmd_cfg))
+        else:
+            self.mmd_cfg = mmd_cfg
+
+        if self.transport_loss_mode == "mmd":
+            self.adversarial = False
+            self.automatic_optimization = True
+            self.adversarial_cfg = None
+        elif adversarial_cfg is not None:
             if hasattr(adversarial_cfg, "mode"):
                 self.adversarial = adversarial_cfg.mode
             else:
@@ -261,6 +276,73 @@ class TRANSIT(LightningModule):
                 return self.decoder(content, ctxt=style)
         else:
             return self.decoder(torch.cat([content, style], dim=1))
+
+    @staticmethod
+    def _cfg_get(cfg, key, default):
+        if cfg is None:
+            return default
+        if isinstance(cfg, Mapping):
+            return cfg.get(key, default)
+        return getattr(cfg, key, default)
+
+    def _compute_mmd(self, x_real, m_real, x_fake, m_fake):
+        # Product of RBF kernels on features and mass; multi-bandwidth for robustness.
+        eps = 1e-12
+
+        def _bandwidth_list(base_sigma, multipliers, device, dtype):
+            mult = torch.as_tensor(multipliers, device=device, dtype=dtype)
+            return base_sigma * mult
+
+        def _rbf_kernel(d2, sigmas):
+            kernels = [torch.exp(-d2 / (2.0 * (sigma ** 2) + eps)) for sigma in sigmas]
+            return torch.stack(kernels, dim=0).mean(dim=0)
+
+        def _pairwise_d2(a, b):
+            return torch.cdist(a, b, p=2) ** 2
+
+        sigma_x_base = self._cfg_get(self.mmd_cfg, "sigma_x", None)
+        sigma_m_base = self._cfg_get(self.mmd_cfg, "sigma_m", None)
+        sig_mult_x = self._cfg_get(self.mmd_cfg, "sigma_x_multipliers", [0.5, 1.0, 2.0])
+        sig_mult_m = self._cfg_get(self.mmd_cfg, "sigma_m_multipliers", [0.5, 1.0, 2.0])
+
+        if sigma_x_base is None:
+            d_real = torch.cdist(x_real, x_real, p=2)
+            sigma_x_base = torch.median(d_real.detach()) + eps
+        else:
+            sigma_x_base = torch.tensor(float(sigma_x_base), device=x_real.device, dtype=x_real.dtype)
+
+        if sigma_m_base is None:
+            d_m_real = torch.cdist(m_real, m_real, p=2)
+            sigma_m_base = torch.median(d_m_real.detach()) + eps
+        else:
+            sigma_m_base = torch.tensor(float(sigma_m_base), device=m_real.device, dtype=m_real.dtype)
+
+        sigma_x_list = _bandwidth_list(sigma_x_base, sig_mult_x, x_real.device, x_real.dtype)
+        sigma_m_list = _bandwidth_list(sigma_m_base, sig_mult_m, m_real.device, m_real.dtype)
+
+        k_x_rr = _rbf_kernel(_pairwise_d2(x_real, x_real), sigma_x_list)
+        k_x_ff = _rbf_kernel(_pairwise_d2(x_fake, x_fake), sigma_x_list)
+        k_x_rf = _rbf_kernel(_pairwise_d2(x_real, x_fake), sigma_x_list)
+
+        k_m_rr = _rbf_kernel(_pairwise_d2(m_real, m_real), sigma_m_list)
+        k_m_ff = _rbf_kernel(_pairwise_d2(m_fake, m_fake), sigma_m_list)
+        k_m_rf = _rbf_kernel(_pairwise_d2(m_real, m_fake), sigma_m_list)
+
+        K_rr = k_x_rr * k_m_rr
+        K_ff = k_x_ff * k_m_ff
+        K_rf = k_x_rf * k_m_rf
+
+        n_r = x_real.shape[0]
+        n_f = x_fake.shape[0]
+        if n_r < 2 or n_f < 2:
+            return torch.tensor(0.0, device=x_real.device, dtype=x_real.dtype)
+
+        def _off_diag_mean(mat):
+            diag_sum = torch.diagonal(mat).sum()
+            return (mat.sum() - diag_sum) / (mat.numel() - mat.shape[0])
+
+        mmd = _off_diag_mean(K_rr) + _off_diag_mean(K_ff) - 2.0 * K_rf.mean()
+        return mmd
 
     def disc_lat(self, e1, e2):
         if self.style_injection_cond:
@@ -440,6 +522,12 @@ class TRANSIT(LightningModule):
                 else:
                     total_loss += loss_repulsive*self.loss_cfg.repulsive.w(self.global_step)
 
+        if self.transport_loss_mode == "mmd":
+            loss_mmd = self._compute_mmd(x_inp, m_pair, x_n, m_n)
+            w_mmd = self._cfg_get(self.mmd_cfg, "w", 1.0)
+            total_loss += loss_mmd * w_mmd
+            self.log(f"{step_type}/loss_mmd", loss_mmd)
+
         # DisCO loss
         if self.loss_cfg.DisCO_loss_cfg is not None:
             if self.loss_cfg.DisCO_loss_cfg.mode == "e1_vs_e2":
@@ -484,7 +572,7 @@ class TRANSIT(LightningModule):
 
     def training_step(self, sample: tuple, batch_idx: int) -> torch.Tensor:
 
-        if "double_discriminator" in self.adversarial: 
+        if isinstance(self.adversarial, str) and "double_discriminator" in self.adversarial: 
             if self.use_disc_lat and self.use_disc_reco:
                 optimizer_g, optimizer_d, optimizer_d2 = self.optimizers()
             elif self.use_disc_lat and not self.use_disc_reco:
@@ -602,7 +690,7 @@ class TRANSIT(LightningModule):
             total_loss = self._shared_step(sample, step_type="train", _batch_index=batch_idx)
             return total_loss
 
-    def _draw_event_transport_trajectories(self, w1_, m_pair_, var, var_name, masses="auto", max_traj=20, plot_second_derivative=False):
+    def _draw_event_transport_trajectories(self, w1_, m_pair_, var, var_name, masses="auto", max_traj=20, plot_second_derivative=True):
         import gc
         if self.true_trajectory_function is not None and max_traj>10:
             max_traj=10
@@ -635,6 +723,7 @@ class TRANSIT(LightningModule):
             del style, recon, w2
             torch.cuda.empty_cache()
 
+        all_z = None
         if self.adversarial:
             all_z = torch.stack(zs)
             vmin = float(all_z.min())
@@ -712,7 +801,9 @@ class TRANSIT(LightningModule):
             return img, img2
 
         # Force release memory
-        del w1, content, recons, zs, all_z
+        if all_z is not None:
+            del all_z
+        del w1, content, recons, zs
         gc.collect()
         torch.cuda.empty_cache()
         return img, None
@@ -762,6 +853,33 @@ class TRANSIT(LightningModule):
         return img
 
     def validation_step (self, sample: tuple, batch_idx: int) -> torch.Tensor:
+        if not self.adversarial:
+            total_loss = self._shared_step(sample, step_type="valid", _batch_index=batch_idx)
+            if batch_idx == 0 and self.valid_plots and self.current_epoch % self.valid_plot_freq == 0:
+                with torch.no_grad():
+                    x_inp, mask, m_pair, _ = self.interprete_input(sample, phase="train")
+                    m_pair = m_pair.reshape([x_inp.shape[0], -1])
+                    if self.do_dequantization:
+                        x_inp = self.dequantization_layer(x_inp)
+                    if self.add_standardizing_layer:
+                        x_inp = self.std_layer_x(x_inp, mask=mask)
+                        m_pair = self.std_layer_ctxt(m_pair)
+                    for var in range(x_inp.shape[1]):
+                        image_traj, images_2der = self._draw_event_transport_trajectories(
+                            x_inp,
+                            m_pair,
+                            var=var,
+                            var_name=self.var_group_list[0][var] if self.var_group_list else f"var{var}",
+                            max_traj=20,
+                        )
+                        if wandb.run is not None:
+                            image = wandb.Image(image_traj)
+                            wandb.run.log({f"valid_images/transport_{self.var_group_list[0][var] if self.var_group_list else var}": image})
+                            if images_2der is not None:
+                                image_2der = wandb.Image(images_2der)
+                                wandb.run.log({f"valid_images/transport_2der_{self.var_group_list[0][var] if self.var_group_list else var}": image_2der})
+            return total_loss
+
         total_loss, e1, e2, w1, w2 = self._shared_step(sample, step_type="valid", _batch_index=batch_idx)
         batch_size=sample[0].shape[0]
         rpm = torch.randperm(batch_size)
@@ -825,7 +943,7 @@ class TRANSIT(LightningModule):
                 sched_d = self.adversarial_cfg.scheduler.scheduler_d(opt_d)
                 sched_e = self.adversarial_cfg.scheduler.scheduler_e(opt_e)
                 return [opt_e, opt_g, opt_d], [sched_e, sched_g, sched_d]            
-        elif "double_discriminator" in self.adversarial:
+        elif isinstance(self.adversarial, str) and "double_discriminator" in self.adversarial:
             if hasattr(self, "encoder2"):
                 enc2_params =  list(self.encoder2.parameters()) if hasattr(self.encoder2, "parameters") else []
             else:
@@ -851,7 +969,7 @@ class TRANSIT(LightningModule):
                 if self.use_disc_lat: schedulers.append(self.adversarial_cfg.scheduler.scheduler_d(opt_d))
                 if self.use_disc_reco: schedulers.append(self.adversarial_cfg.scheduler.scheduler_d2(opt_d2))
             return optimisers, schedulers
-        elif self.adversarial:	
+        elif self.adversarial:
             enc2_params =  list(self.encoder2.parameters()) if hasattr(self.encoder2, "parameters") else []
             enc_dec_params = list(self.encoder1.parameters()) + enc2_params + list(self.decoder.parameters())
             opt_g = self.hparams.optimizer(params=enc_dec_params)

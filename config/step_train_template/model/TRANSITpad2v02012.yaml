@@ -1,0 +1,61 @@
+defaults:
+  - _self_
+  - optimizer: AdamW_lr2-4wd1-3.yaml
+  - scheduler: cyclic.yaml
+
+network_type: partial_context
+_target_: transit.src.models.transit_model.TRANSIT
+use_m_encodig: True
+encoder_cfg: 
+  _target_: transit.mattstools.mattstools.modules_myy.DenseNetwork
+  _partial_: true
+  act_h: silu
+  act_i: none
+  nrm: none
+  hddn_dim: 128
+  num_blocks: 3
+  n_lyr_pbk: 2
+  do_res: True
+  scale_output_hidden: 1.0
+  ctxt_in_inpt: True
+  ctxt_in_hddn: True
+  ctxt_in_out: False
+decoder_cfg:
+  _target_: transit.mattstools.mattstools.modules_myy.DenseNetwork
+  _partial_: true
+  act_h: silu
+  act_i: none
+  nrm: none
+  hddn_dim: 128
+  num_blocks: 3
+  n_lyr_pbk: 2
+  do_res: True
+  scale_output_hidden: 1.0
+  ctxt_in_inpt: True
+  ctxt_in_hddn: True
+  ctxt_in_out: False
+latent_norm: False
+latent_dim: 8
+loss_cfg:
+  reco:
+    w: 1
+  consistency_x:
+    w: 0.1
+  second_derivative_smoothness:
+    w: 0.1
+    step: 1.0
+
+transport_loss: mmd
+mmd_cfg:
+  w: 0.5
+  sigma_x_multipliers: [0.5, 1.0, 2.0]
+  sigma_m_multipliers: [0.5, 1.0, 2.0]
+  # sigma_x: null  # optional fixed bandwidth
+  # sigma_m: null  # optional fixed bandwidth
+adversarial_cfg: null
+discriminator_latent_cfg: null
+
+valid_plots: ${verbose_validation}
+add_standardizing_layer: True
+reverse_pass_mode: additional_input
+afterglow_epoch: 999999999
