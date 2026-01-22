@@ -38,7 +38,7 @@ def main(cfg: DictConfig) -> None:
     log.info("Loading best checkpoint")
     device = "cuda" if T.cuda.is_available() else "cpu"
     model_class = hydra.utils.get_class(orig_cfg.model._target_)
-    model = model_class.load_from_checkpoint(orig_cfg.ckpt_path, map_location=device)
+    model = model_class.load_from_checkpoint(orig_cfg.ckpt_path, map_location=device, weights_only=False)
 
     # Instantiate the datamodule use a different config for data then for training
     if hasattr(orig_cfg, "data"):
