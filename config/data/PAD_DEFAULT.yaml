@@ -141,7 +141,7 @@ export_latent_sb1:
   train_data: null
   test_data:
     _target_: src.data.data.InMemoryDataFrameDict
-    list_order: ["data", "t"]
+    list_order: ["data", "cond"]
     file_path: "${general.run_dir}/../data/data/sb.h5"
     plotting_path: "${general.run_dir}/plots/sb1"
     processor_cfg:
@@ -151,10 +151,10 @@ export_latent_sb1:
       - _target_: src.data.process.ProcessorSelectSidebands
         mode: "SB1"
         SB1SRSB2_edges: ${data.SB1SRSB2_edges}
-        scalar_df_name: "t"
-        var_name: "t"
+        scalar_df_name: "orig"
+        var_name: "m_jj"
       - _target_: src.data.process.ProcessorKeepFrames
-        frame_names_to_keep: ["data", "t"]
+        frame_names_to_keep: ["data", "cond"]
   loader_kwargs:
     pin_memory: true
     batch_size: ${data.training_batch_size}
@@ -168,7 +168,7 @@ export_latent_sb2:
   train_data: null
   test_data:
     _target_: src.data.data.InMemoryDataFrameDict
-    list_order: ["data", "t"]
+    list_order: ["data", "cond"]
     file_path: "${general.run_dir}/../data/data/sb.h5"
     plotting_path: "${general.run_dir}/plots/sb2"
     processor_cfg:
@@ -178,10 +178,10 @@ export_latent_sb2:
       - _target_: src.data.process.ProcessorSelectSidebands
         mode: "SB2"
         SB1SRSB2_edges: ${data.SB1SRSB2_edges}
-        scalar_df_name: "t"
-        var_name: "t"
+        scalar_df_name: "orig"
+        var_name: "m_jj"
       - _target_: src.data.process.ProcessorKeepFrames
-        frame_names_to_keep: ["data", "t"]
+        frame_names_to_keep: ["data", "cond"]
   loader_kwargs:
     pin_memory: true
     batch_size: ${data.training_batch_size}
