@@ -1,11 +1,7 @@
-model_checkpoint:
-  _target_: pytorch_lightning.callbacks.ModelCheckpoint
+model_chekpoint_custom:
+  _target_: transit.src.models.callbacks.SaveLastEveryEpoch
   dirpath: ${general.run_dir}/template/checkpoints
-  filename: min_val_loss_{epoch:03d}
-  monitor: valid/total_loss
-  mode: min
-  save_last: True
-  auto_insert_metric_name: False
+  filename: last.ckpt
 
 model_summary:
   _target_: pytorch_lightning.callbacks.RichModelSummary
