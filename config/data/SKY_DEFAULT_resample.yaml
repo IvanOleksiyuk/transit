@@ -4,24 +4,24 @@ training_batch_size: 2048
 
 # patch_id: patch_l198.00_b32.23
 # bins: [-13.186211, -7.1862106, -1.1862106, 4.8137894]
-# context: proper_motion_galactic_local_latitude
+# context: motion_latitude
 
 patch_id: patch_l198.00_b32.23
 bins: [-10.566339, -4.5663385, 1.4336615, 7.4336615]
-context: proper_motion_galactic_local_longitude_cos_latitude
+context: motion_longitude_cos_latitude
 
 feature_list:
   - latitude_galactic_local
   - longitude_galactic_local
   - color_bp_magnitude_minus_rp_magnitude
   - magnitude_g_band_mean_integrated
-  - proper_motion_galactic_local_longitude_cos_latitude
-  - proper_motion_galactic_local_latitude
+  - motion_longitude_cos_latitude
+  - motion_latitude
 
 template_training:
   _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
-    data_dir: ${private.data_dir} 
+    data_dir: ${private.data_dir}
     patch_id: ${data.patch_id}
     sample_bin: SB1SRSB2
     feature_list: ${data.feature_list}
@@ -42,7 +42,7 @@ template_training:
 export_template:
   _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
-    data_dir: ${private.data_dir} 
+    data_dir: ${private.data_dir}
     patch_id: ${data.patch_id}
     sample_bin: SR
     feature_list: ${data.feature_list}
@@ -60,7 +60,7 @@ export_template:
 export_SB1:
   _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
-    data_dir: ${private.data_dir} 
+    data_dir: ${private.data_dir}
     sample_bin: SB1
     patch_id: ${data.patch_id}
     feature_list: ${data.feature_list}
@@ -79,7 +79,7 @@ export_SB1:
 export_SB2:
   _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
-    data_dir: ${private.data_dir} 
+    data_dir: ${private.data_dir}
     sample_bin: SB2
     patch_id: ${data.patch_id}
     feature_list: ${data.feature_list}
@@ -98,7 +98,7 @@ export_SB2:
 export_SB1toSR:
   _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
-    data_dir: ${private.data_dir} 
+    data_dir: ${private.data_dir}
     sample_bin: SR
     patch_id: ${data.patch_id}
     feature_list: ${data.feature_list}
@@ -117,7 +117,7 @@ export_SB1toSR:
 export_SB2toSR:
   _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
-    data_dir: ${private.data_dir} 
+    data_dir: ${private.data_dir}
     sample_bin: SR
     patch_id: ${data.patch_id}
     feature_list: ${data.feature_list}
@@ -138,7 +138,7 @@ export_SB2toSR:
 eval_SB1:
   _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
-    data_dir: ${private.data_dir} 
+    data_dir: ${private.data_dir}
     sample_bin: SB1
     patch_id: ${data.patch_id}
     feature_list: ${data.feature_list}
@@ -157,7 +157,7 @@ eval_SB1:
 eval_SB2:
   _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
-    data_dir: ${private.data_dir} 
+    data_dir: ${private.data_dir}
     sample_bin: SB2
     patch_id: ${data.patch_id}
     feature_list: ${data.feature_list}
@@ -176,7 +176,7 @@ eval_SB2:
 eval_SR:
   _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
-    data_dir: ${private.data_dir} 
+    data_dir: ${private.data_dir}
     sample_bin: SR
     patch_id: ${data.patch_id}
     feature_list: ${data.feature_list}
