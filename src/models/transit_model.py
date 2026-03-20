@@ -62,8 +62,6 @@ class TRANSIT(LightningModule):
         encoder_cfg,
         decoder_cfg,
         network_type = "partial_context",
-        encoder_cfg2: Mapping = None,
-        latent_dim2: int = None, 
         var_group_list: list = None,
         loss_cfg: Mapping = None,
         transport_loss: str = "adversarial",
@@ -83,6 +81,8 @@ class TRANSIT(LightningModule):
         valid_plot_freq = 1,
         dequantization_cfg = None,
         true_trajectory_pickle_file = None, # Path to a pickle file containing a function that provides true trajectories
+        do_switch_off_adversary_in_case_of_instability = False
+        
     ) -> None:
         """
         Args:
@@ -145,7 +145,7 @@ class TRANSIT(LightningModule):
         self.latent_norm_enc1 = latent_norm
         self.latent_norm_enc2 = latent_norm
         self.total_skip = total_skip
-        
+        self.do_switch_off_adversary_in_case_of_instability = do_switch_off_adversary_in_case_of_instability
         # Initialise the networks
         if hasattr(inpt_dim[0], "__getitem__"):
             x_dim = inpt_dim[0][0]
@@ -210,6 +210,7 @@ class TRANSIT(LightningModule):
         # For more stable checks in the shared step
         expected_attrs = ["reco", 
                 "consistency_x", 
+                "consistency_normalised_x",
                 "consistency_xx", 
                 "consistency_cont", 
                 "latent_variance_cfg", 
@@ -219,7 +220,9 @@ class TRANSIT(LightningModule):
                 "attractive", 
                 "repulsive", 
                 "second_derivative_smoothness",
-                "third_derivative_smoothness"]
+                "third_derivative_smoothness",
+                "noised_reco",
+                "consistency_noised"]
         for attr in list(self.loss_cfg.keys()):
             if attr in expected_attrs:
                 setattr(self.loss_cfg, attr, getattr(self.loss_cfg, attr, None))
@@ -381,10 +384,15 @@ class TRANSIT(LightningModule):
         return x_inp, mask, m_pair, m_add
 
     def _shared_step(self, sample: tuple, _batch_index = None, step_type="none") -> torch.Tensor:
+        self.switch_off_adversary_in_case_of_instability = True
         self.log(f"{step_type}_debug/global_step", self.global_step)
         batch_size=sample[0].shape[0]
         
         x_inp, mask, m_pair, m_add = self.interprete_input(sample, phase="train")
+
+        if self.input_noise_cfg is not None and self.training:
+            noise_std = self.input_noise_cfg.get("noise_std", 0.1)
+            x_inp = x_inp + torch.randn_like(x_inp)*noise_std
 
         #Make sure the inputs are in the right shape
         m_pair=m_pair.reshape([x_inp.shape[0], -1])
@@ -437,6 +445,7 @@ class TRANSIT(LightningModule):
 
         #### Losses
         total_loss = 0
+        self.switch_off_adversary_in_case_of_instability = False
 
         # Reconstruction loss
         if self.use_m_encodig and self.decoder_out_m:
@@ -445,7 +454,11 @@ class TRANSIT(LightningModule):
             loss_reco = mse_loss(recon, x_inp).mean()
         total_loss += loss_reco*self.loss_cfg.reco.w
         self.log(f"{step_type}/loss_reco", loss_reco)
-        
+
+        if self.do_switch_off_adversary_in_case_of_instability:
+            if loss_reco > 0.0001:
+                self.switch_off_adversary_in_case_of_instability = True
+
         # Second derivative smoothness
         if self.loss_cfg.second_derivative_smoothness is not None:
             e2_p_pl = self.encode_style(m_add + self.loss_cfg.second_derivative_smoothness.step)[rpm]
@@ -500,7 +513,56 @@ class TRANSIT(LightningModule):
                     total_loss += loss_back_vec*self.loss_cfg.consistency_x.w
                 else:
                     total_loss += loss_back_vec*self.loss_cfg.consistency_x.w(self.global_step)
-            
+            if self.do_switch_off_adversary_in_case_of_instability:
+                if loss_back_vec > 0.0001:
+                    self.switch_off_adversary_in_case_of_instability = True
+
+        # Consistency losses 
+        if self.loss_cfg.consistency_normalised_x is not None:
+            var = content.var(dim=0, unbiased=False, keepdim=True).detach()
+            self.log(f"{step_type}/mean_variance", var.mean())
+            diff = content - content_n
+            loss_back_vec_normalised = diff**2 / (var + 0.00001)
+            loss_back_vec_normalised = (loss_back_vec_normalised).mean()
+            self.log(f"{step_type}/loss_back_vec_explicit", (diff**2).mean())
+            self.log(f"{step_type}/loss_back_vec_explicit_simpnorm", (diff**2).mean()/var.mean())
+            self.log(f"{step_type}/loss_back_vec_normalised", loss_back_vec_normalised)
+            if self.loss_cfg.consistency_normalised_x.w is not None:
+                if isinstance(self.loss_cfg.consistency_normalised_x.w, float) or isinstance(self.loss_cfg.consistency_normalised_x.w, int):
+                    total_loss += loss_back_vec_normalised*self.loss_cfg.consistency_normalised_x.w
+                else:
+                    total_loss += loss_back_vec_normalised*self.loss_cfg.consistency_normalised_x.w(self.global_step)
+            if self.do_switch_off_adversary_in_case_of_instability:
+                if loss_back_vec_normalised > 0.0001:
+                    self.switch_off_adversary_in_case_of_instability = True
+
+        # Nosed reconstruction loss
+        if self.loss_cfg.noised_reco is not None:
+            x_inp_noised = x_inp + torch.randn_like(x_inp)*self.loss_cfg.noised_reco.noise_std
+            content_noised = self.encode_content(x_inp_noised, m_pair, mask=mask)
+            recon_noised = self.decode(content_noised, style)
+            loss_reco_noised = mse_loss(x_inp_noised, recon_noised).mean()
+            self.log(f"{step_type}/loss_reco_noised", loss_reco_noised)
+            if self.loss_cfg.noised_reco.w is not None:
+                if isinstance(self.loss_cfg.noised_reco.w, float) or isinstance(self.loss_cfg.noised_reco.w, int):
+                    total_loss += loss_reco_noised*self.loss_cfg.noised_reco.w
+                else:
+                    total_loss += loss_reco_noised*self.loss_cfg.noised_reco.w(self.global_step)
+
+        # Noised consistency loss
+        if self.loss_cfg.consistency_noised is not None:
+            content_noised_2 = content + torch.randn_like(content)*self.loss_cfg.consistency_noised.noise_std
+            recon_noised_2 = self.decode(content_noised_2, style_p)
+            content_noised_n = self.encode_content(recon_noised_2, m_n, mask=mask)
+            loss_back_vec_noised = mse_loss(content_noised_2, content_noised_n).mean()
+            self.log(f"{step_type}/loss_back_vec_noised", loss_back_vec_noised)
+            if self.loss_cfg.consistency_noised.w is not None:
+                if isinstance(self.loss_cfg.consistency_noised.w, float) or isinstance(self.loss_cfg.consistency_noised.w, int):
+                    total_loss += loss_back_vec_noised*self.loss_cfg.consistency_noised.w
+                else:
+                    total_loss += loss_back_vec_noised*self.loss_cfg.consistency_noised.w(self.global_step)
+
+        self.log(f"{step_type}/switch_off_adversary_in_case_of_instability", int(self.switch_off_adversary_in_case_of_instability))
 
         if self.loss_cfg.consistency_cont is not None:
             loss_back_cont = mse_loss(style_p, style_n).mean()
@@ -526,9 +588,8 @@ class TRANSIT(LightningModule):
 
         # variance loss
         if self.loss_cfg.latent_variance_cfg is not None:
-            std_e1 = torch.sqrt(content.var(dim=0) + 0.0001)
-            #std_e2 = torch.sqrt(style.var(dim=0) + 0.0001)
-            loss_latent_variance = torch.mean(torch.abs(1 - std_e1)**self.loss_cfg.latent_variance_cfg.pow)# + torch.mean(torch.square(1 - std_e2)**self.loss_cfg.latent_variance_cfg.pow) / 2
+            var = content.var(dim=0)
+            loss_latent_variance = torch.mean(torch.abs(1 - var)**self.loss_cfg.latent_variance_cfg.pow)# + torch.mean(torch.square(1 - std_e2)**self.loss_cfg.latent_variance_cfg.pow) / 2
             if self.loss_cfg.latent_variance_cfg.w is not None:
                 total_loss += loss_latent_variance*self.loss_cfg.latent_variance_cfg.w
             self.log(f"{step_type}/variance_regularization", loss_latent_variance)
@@ -697,7 +758,7 @@ class TRANSIT(LightningModule):
             # Train generator
             if self.current_epoch<self.adversarial_cfg.warmup or allow_gen_train:
                 total_loss2 = total_loss
-                if self.current_epoch>self.adversarial_cfg.warmup or self.adversarial_cfg.g_loss_weight_in_warmup:
+                if (self.current_epoch>self.adversarial_cfg.warmup or self.adversarial_cfg.g_loss_weight_in_warmup) and not self.switch_off_adversary_in_case_of_instability:
                     if isinstance(self.adversarial_cfg.g_loss_weight, float) or isinstance(self.adversarial_cfg.g_loss_weight, int):
                         g_loss_weight = self.adversarial_cfg.g_loss_weight
                     else:
@@ -799,7 +860,7 @@ class TRANSIT(LightningModule):
         plt.scatter(x_pair, y_pair[:, var], marker="x", label="originals", c="green")
         plt.xlabel("mass")
         plt.ylabel(f"dim{var}")
-        plt.title(f"Event transport for {var_name}, global step: {self.global_step}")
+        plt.title(f"Event transport for {var_name}, global step: {self.global_step}, epoch: {self.current_epoch}")
 
         if self.true_trajectory_function is not None:
             if not hasattr(self, "cached_true_trajectories"):
@@ -834,7 +895,7 @@ class TRANSIT(LightningModule):
                 plt.plot(x[1:-1], (-2*y[1:-1]+y[:-2]+y[2:])/(x[1]-x[0])**2, "r")
             plt.xlabel("mass")
             plt.ylabel(f"dim{var}")
-            plt.title(f"Event transport 2nd derivative for {var_name}, global step: {self.global_step}")
+            plt.title(f"Event transport 2nd derivative for {var_name}, global step: {self.global_step}, epoch: {self.current_epoch}")
             fig = plt.gcf()
             fig.tight_layout()
             fig.canvas.draw()
@@ -1091,6 +1152,8 @@ class TRANSIT(LightningModule):
             context = batch[2]
         if self.var_group_list is not None:
             sample = self.generate(batch).squeeze(1)
+            if len(sample.shape)==1:
+                sample = sample.unsqueeze(1)
             sample = sample.reshape(-1, sample.shape[-1])
             result = {var_name: column.reshape(-1, 1) for var_name, column in zip(self.var_group_list[0], sample.T)}
             result.update({var_name: column.reshape(-1, 1) for var_name, column in zip(self.var_group_list[1], context.T)})                
