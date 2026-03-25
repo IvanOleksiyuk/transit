@@ -48,6 +48,9 @@ def main(cfg: DictConfig) -> None:
 
     if hasattr(datamodule, "setup"):
         datamodule.setup("test")
+
+    for key in datamodule.test_data.data:
+        print(key, len(datamodule.test_data.data[key]))
     
     # Cycle through the datasets and create the dataloader
     log.info("Running latent prediction")
@@ -57,6 +60,7 @@ def main(cfg: DictConfig) -> None:
         e1s.append(model.get_second_latent(batch[0].to(device), batch[1].to(device), batch[2].to(device)).detach().cpu())
     vars = [f"e1_{i}" for i in range(e1s[0].shape[1])]
     dataset_dict = {var: T.hstack([o[:, i] for o in e1s]).numpy() for i, var in enumerate(vars)}
+    print("len of dataset dict", len(dataset_dict[vars[0]]))
     log.info("Saving outputs")
     output_dir = Path(orig_cfg.paths.full_path, "outputs")
     output_dir.mkdir(parents=True, exist_ok=True)

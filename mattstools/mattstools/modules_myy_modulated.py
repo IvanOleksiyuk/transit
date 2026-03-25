@@ -6,6 +6,22 @@ from .torch_utils import get_act, get_nrm, masked_pool, smart_cat
 from .modules_myy import MLPBlock
 
 
+class _ShakeShakeMix(T.autograd.Function):
+    """Shake-shake mix with independent forward and backward coefficients."""
+
+    @staticmethod
+    def forward(ctx, a: T.Tensor, b: T.Tensor, alpha: T.Tensor, beta: T.Tensor) -> T.Tensor:
+        ctx.save_for_backward(beta)
+        return alpha * a + (1.0 - alpha) * b
+
+    @staticmethod
+    def backward(ctx, grad_output: T.Tensor):
+        (beta,) = ctx.saved_tensors
+        grad_a = grad_output * beta
+        grad_b = grad_output * (1.0 - beta)
+        return grad_a, grad_b, None, None
+
+
 class JustPropagateInput(nn.Module):
     """
     A simple module that just projects the input (ignoring context).
@@ -349,6 +365,249 @@ class SelfModulatedFeatureLayer(nn.Module):
         beta = self.beta_net(x, ctxt)
         return x + v * g + beta
 
+class ContextOnlyVBetaModulatedFeatureLayer(nn.Module):
+    """
+    Dimension-preserving modulation with context-only value and bias:
+        y = x + v(ctxt) * gate(x,ctxt) + beta(ctxt)
+
+    - v and beta depend only on ctxt
+    - gate can still depend on both x and ctxt
+    """
+
+    def __init__(
+        self,
+        d: int,
+        ctxt_dim: int,
+        hidden: int = 32,
+        bias_hidden: int = 16,
+        act: str = "lrlu",
+        nrm: str = "none",
+        drp: float = 0.0,
+        gate: str = "sigmoid",
+        gate_uses_ctxt: bool = True,
+        init_zeros: bool = False,
+        use_bias: bool = True,
+    ):
+        super().__init__()
+
+        if ctxt_dim <= 0:
+            raise ValueError("ContextOnlyVBetaModulatedFeatureLayer requires ctxt_dim > 0")
+
+        self.d = d
+        self.ctxt_dim = ctxt_dim
+        self.gate = gate
+        self.gate_uses_ctxt = gate_uses_ctxt
+
+        # Context-only value branch v(ctxt)
+        self.v_net = MLPBlock(
+            inpt_dim=ctxt_dim,
+            outp_dim=d,
+            ctxt_dim=0,
+            n_layers=2,
+            act=act,
+            nrm=nrm,
+            drp=drp,
+            do_res=False,
+            init_zeros=init_zeros,
+            use_bias=use_bias,
+        )
+
+        # Gate branch gate(x, ctxt)
+        self.q_net = MLPBlock(
+            inpt_dim=d,
+            outp_dim=d,
+            ctxt_dim=ctxt_dim if gate_uses_ctxt else 0,
+            n_layers=2,
+            act=act,
+            nrm=nrm,
+            drp=drp,
+            do_res=False,
+            init_zeros=init_zeros,
+            use_bias=use_bias,
+        )
+
+        # Context-only bias branch beta(ctxt)
+        self.beta_net = MLPBlock(
+            inpt_dim=ctxt_dim,
+            outp_dim=d,
+            ctxt_dim=0,
+            n_layers=2,
+            act=act,
+            nrm=nrm,
+            drp=drp,
+            do_res=False,
+            init_zeros=init_zeros,
+            use_bias=use_bias,
+        )
+
+    def _apply_gate(self, logits: T.Tensor) -> T.Tensor:
+        if self.gate == "sigmoid":
+            return T.sigmoid(logits)
+        if self.gate == "tanh":
+            return T.tanh(logits)
+        if self.gate == "softplus":
+            return T.nn.functional.softplus(logits)
+        raise ValueError(f"Unknown gate type: {self.gate}")
+
+    def forward(self, x: T.Tensor, ctxt: T.Tensor | None = None) -> T.Tensor:
+        if ctxt is None:
+            raise ValueError("ctxt must be provided for ContextOnlyVBetaModulatedFeatureLayer")
+
+        v = self.v_net(ctxt)
+        gate_ctxt = ctxt if self.gate_uses_ctxt else None
+        g = self._apply_gate(self.q_net(x, gate_ctxt))
+        beta = self.beta_net(ctxt)
+        return x + v * g + beta
+
+
+class ShakeShakeContextOnlyVBetaModulatedFeatureLayer(nn.Module):
+    """
+    Context-only v/beta modulation with shake-shake regularization:
+        y = x + shake(delta_1, delta_2)
+
+    where
+        delta_i = v_i(ctxt) * gate_i(x,ctxt) + beta_i(ctxt)
+
+    - v_i and beta_i depend only on ctxt
+    - gate_i can optionally use ctxt via gate_uses_ctxt
+    - During eval, shake reduces to the average of both branches
+    """
+
+    def __init__(
+        self,
+        d: int,
+        ctxt_dim: int,
+        hidden: int = 32,
+        bias_hidden: int = 16,
+        act: str = "lrlu",
+        nrm: str = "none",
+        drp: float = 0.0,
+        gate: str = "sigmoid",
+        gate_uses_ctxt: bool = True,
+        init_zeros: bool = False,
+        use_bias: bool = True,
+    ):
+        super().__init__()
+
+        if ctxt_dim <= 0:
+            raise ValueError("ShakeShakeContextOnlyVBetaModulatedFeatureLayer requires ctxt_dim > 0")
+
+        self.d = d
+        self.ctxt_dim = ctxt_dim
+        self.gate = gate
+        self.gate_uses_ctxt = gate_uses_ctxt
+
+        # Branch 1
+        self.v_net_1 = MLPBlock(
+            inpt_dim=ctxt_dim,
+            outp_dim=d,
+            ctxt_dim=0,
+            n_layers=2,
+            act=act,
+            nrm=nrm,
+            drp=drp,
+            do_res=False,
+            init_zeros=init_zeros,
+            use_bias=use_bias,
+        )
+        self.q_net_1 = MLPBlock(
+            inpt_dim=d,
+            outp_dim=d,
+            ctxt_dim=ctxt_dim if gate_uses_ctxt else 0,
+            n_layers=2,
+            act=act,
+            nrm=nrm,
+            drp=drp,
+            do_res=False,
+            init_zeros=init_zeros,
+            use_bias=use_bias,
+        )
+        self.beta_net_1 = MLPBlock(
+            inpt_dim=ctxt_dim,
+            outp_dim=d,
+            ctxt_dim=0,
+            n_layers=2,
+            act=act,
+            nrm=nrm,
+            drp=drp,
+            do_res=False,
+            init_zeros=init_zeros,
+            use_bias=use_bias,
+        )
+
+        # Branch 2
+        self.v_net_2 = MLPBlock(
+            inpt_dim=ctxt_dim,
+            outp_dim=d,
+            ctxt_dim=0,
+            n_layers=2,
+            act=act,
+            nrm=nrm,
+            drp=drp,
+            do_res=False,
+            init_zeros=init_zeros,
+            use_bias=use_bias,
+        )
+        self.q_net_2 = MLPBlock(
+            inpt_dim=d,
+            outp_dim=d,
+            ctxt_dim=ctxt_dim if gate_uses_ctxt else 0,
+            n_layers=2,
+            act=act,
+            nrm=nrm,
+            drp=drp,
+            do_res=False,
+            init_zeros=init_zeros,
+            use_bias=use_bias,
+        )
+        self.beta_net_2 = MLPBlock(
+            inpt_dim=ctxt_dim,
+            outp_dim=d,
+            ctxt_dim=0,
+            n_layers=2,
+            act=act,
+            nrm=nrm,
+            drp=drp,
+            do_res=False,
+            init_zeros=init_zeros,
+            use_bias=use_bias,
+        )
+
+    def _apply_gate(self, logits: T.Tensor) -> T.Tensor:
+        if self.gate == "sigmoid":
+            return T.sigmoid(logits)
+        if self.gate == "tanh":
+            return T.tanh(logits)
+        if self.gate == "softplus":
+            return T.nn.functional.softplus(logits)
+        raise ValueError(f"Unknown gate type: {self.gate}")
+
+    def _shake_shake(self, a: T.Tensor, b: T.Tensor) -> T.Tensor:
+        if not self.training:
+            return 0.5 * (a + b)
+        coeff_shape = [a.shape[0]] + [1] * (a.dim() - 1) if a.dim() > 1 else [1]
+        alpha = T.rand(coeff_shape, device=a.device, dtype=a.dtype)
+        beta = T.rand(coeff_shape, device=a.device, dtype=a.dtype)
+        return _ShakeShakeMix.apply(a, b, alpha, beta)
+
+    def forward(self, x: T.Tensor, ctxt: T.Tensor | None = None) -> T.Tensor:
+        if ctxt is None:
+            raise ValueError("ctxt must be provided for ShakeShakeContextOnlyVBetaModulatedFeatureLayer")
+
+        gate_ctxt = ctxt if self.gate_uses_ctxt else None
+
+        v_1 = self.v_net_1(ctxt)
+        g_1 = self._apply_gate(self.q_net_1(x, gate_ctxt))
+        beta_1 = self.beta_net_1(ctxt)
+        delta_1 = v_1 * g_1 + beta_1
+
+        v_2 = self.v_net_2(ctxt)
+        g_2 = self._apply_gate(self.q_net_2(x, gate_ctxt))
+        beta_2 = self.beta_net_2(ctxt)
+        delta_2 = v_2 * g_2 + beta_2
+
+        return x + self._shake_shake(delta_1, delta_2)
+
 
 class ModulatedBlock(nn.Module):
     """
@@ -373,6 +632,9 @@ class ModulatedBlock(nn.Module):
         mod_hidden: int = 32,
         mod_bias_hidden: int = 16,
         gate: str = "sigmoid",
+        context_only_vbeta: bool = False,
+        use_shake_shake: bool = False,
+        gate_uses_ctxt: bool = True,
         init_zeros_post: bool = False,
     ):
         super().__init__()
@@ -398,18 +660,51 @@ class ModulatedBlock(nn.Module):
             use_bias=use_bias,
         )
 
-        self.mod = SelfModulatedFeatureLayer(
-            d=outp_dim,
-            ctxt_dim=ctxt_dim,
-            hidden=mod_hidden,
-            bias_hidden=mod_bias_hidden,
-            act=act,
-            nrm=nrm,
-            drp=drp,
-            gate=gate,
-            init_zeros=False,
-            use_bias=use_bias,
-        )
+        if context_only_vbeta:
+            if ctxt_dim <= 0:
+                raise ValueError("context_only_vbeta=True requires ctxt_dim > 0 in ModulatedBlock")
+
+            if use_shake_shake:
+                self.mod = ShakeShakeContextOnlyVBetaModulatedFeatureLayer(
+                    d=outp_dim,
+                    ctxt_dim=ctxt_dim,
+                    hidden=mod_hidden,
+                    bias_hidden=mod_bias_hidden,
+                    act=act,
+                    nrm=nrm,
+                    drp=drp,
+                    gate=gate,
+                    gate_uses_ctxt=gate_uses_ctxt,
+                    init_zeros=False,
+                    use_bias=use_bias,
+                )
+            else:
+                self.mod = ContextOnlyVBetaModulatedFeatureLayer(
+                    d=outp_dim,
+                    ctxt_dim=ctxt_dim,
+                    hidden=mod_hidden,
+                    bias_hidden=mod_bias_hidden,
+                    act=act,
+                    nrm=nrm,
+                    drp=drp,
+                    gate=gate,
+                    gate_uses_ctxt=gate_uses_ctxt,
+                    init_zeros=False,
+                    use_bias=use_bias,
+                )
+        else:
+            self.mod = SelfModulatedFeatureLayer(
+                d=outp_dim,
+                ctxt_dim=ctxt_dim,
+                hidden=mod_hidden,
+                bias_hidden=mod_bias_hidden,
+                act=act,
+                nrm=nrm,
+                drp=drp,
+                gate=gate,
+                init_zeros=False,
+                use_bias=use_bias,
+            )
 
         self.post = MLPBlock(
             inpt_dim=outp_dim,
@@ -476,6 +771,9 @@ class ModulatedNetwork(nn.Module):
         gate: str = "sigmoid",
         mod_hidden: int = 32,
         mod_bias_hidden: int = 16,
+        context_only_vbeta: bool = False,
+        use_shake_shake: bool = False,
+        gate_uses_ctxt: bool = True,
         # init options
         hddn_init_zeros: bool = False,
         output_init_zeros: bool = False,
@@ -532,6 +830,9 @@ class ModulatedNetwork(nn.Module):
                     gate=gate,
                     mod_hidden=mod_hidden,
                     mod_bias_hidden=mod_bias_hidden,
+                    context_only_vbeta=context_only_vbeta,
+                    use_shake_shake=use_shake_shake,
+                    gate_uses_ctxt=gate_uses_ctxt,
                     init_zeros_post=hddn_init_zeros,
                 )
             )

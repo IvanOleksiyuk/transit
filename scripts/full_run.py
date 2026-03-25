@@ -25,6 +25,7 @@ import transit.scripts.run_cwola as run_cwola
 import transit.scripts.cwola_evaluation as cwola_evaluation
 import transit.scripts.plot_compare as plot_compare
 import transit.scripts.export_latent_space as export_latent_space
+import transit.scripts.export_second_latent_space as export_second_latent_space
 import transit.scripts.time_chart as time_chart
 import transit.scripts.check_close as check_close
 import transit.scripts.collect_metrics as collect_metrics
@@ -151,9 +152,15 @@ def main(cfg: DictConfig) -> None:
         log.info("Start:Generate latent representation of events in SR and Sidebands")
         if hasattr(cfg.step_export_latent, "several_confs"):
             for conf in cfg.step_export_latent.several_confs.values():
-                export_latent_space.main(conf)
+                if cfg.get("export_second_latent", False):
+                    export_second_latent_space.main(conf)
+                else:
+                    export_latent_space.main(conf)
         else:
-            export_latent_space.main(cfg.step_export_latent.export_latent_all)
+            if cfg.get("export_second_latent", False):
+                export_second_latent_space.main(cfg.step_export_latent.export_latent_all)
+            else:
+                export_latent_space.main(cfg.step_export_latent.export_latent_all)
         log.info(f"Finish: Generate latent representation of events in SR and Sidebands Time taken: {datetime.now() - start_time}")
         log.info("===================================")
         update_runtime_file('Generate latent: {}\n'.format(datetime.now() - start_time))

@@ -266,6 +266,34 @@ class TRANSIT(LightningModule):
             m_pair = self.std_layer_ctxt(m_pair)
         
         return self.encode_content(x_inp, m_pair, mask=mask)
+    
+    def inn_transport(self, xs, ms_from, ms_to, mask=None):
+        # xs and ms are already stadardized and dequantized if those layers are present, so we can just encode, decode and return the reconstruction
+        content = self.encode_content(xs, ms_from, mask=mask)
+        style = self.encode_style(ms_to)
+        recon = self.decode(content, style)
+        return recon
+    
+    def inn_second_latent(self, xs, ms_from, ms_to, mask=None):
+        # xs and ms are already stadardized and dequantized if those layers are present, so we can just encode, decode and return the reconstruction
+        content = self.encode_content(xs, ms_from, mask=mask)
+        style = self.encode_style(ms_to)
+        recon = self.decode(content, style)
+        content_n = self.encode_content(recon, ms_to, mask=mask)
+        style_n = self.encode_style(ms_to)
+        return content_n, style_n
+    
+    def get_second_latent(self, x_inp, m_from, m_to, mask=None):
+        # Function fro outside use to get the second latent encoding for a given input and two different contexts. Useful for transport in the latent space.
+        m_from = m_from.reshape([x_inp.shape[0], -1])
+        m_to = m_to.reshape([x_inp.shape[0], -1])
+        if self.do_dequantization:
+            x_inp = self.dequantization_layer(x_inp)
+        if self.add_standardizing_layer:
+            x_inp = self.std_layer_x(x_inp, mask=mask)
+            m_from = self.std_layer_ctxt(m_from)
+            m_to = self.std_layer_ctxt(m_to)
+        return self.inn_second_latent(x_inp, m_from, m_to, mask=mask)[0]
 
     def encode_style(self, m):
         en = self.encoder2(m)
