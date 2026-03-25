@@ -47,9 +47,10 @@ class MLPBlock(nn.Module):
         self,
         inpt_dim: int,
         outp_dim: int,
+        hidden_dim: int | None = None,
         ctxt_dim: int = 0,
         n_layers: int = 1,
-        act: str = "lrlu",
+        act: str = "silu",
         nrm: str = "none",
         drp: float = 0,
         do_res: bool = False,
@@ -67,6 +68,9 @@ class MLPBlock(nn.Module):
             The number of features for the input layer
         outp_dim : int
             The number of output features
+        hidden_dim : int | None, optional
+            Hidden width for intermediate layers when n_layers > 1.
+            If None, defaults to outp_dim (original behavior).
         ctxt_dim : int, optional
             The number of contextual features to concat to the inputs, by default 0
         n_layers : int, optional
@@ -92,6 +96,7 @@ class MLPBlock(nn.Module):
         # Save the input and output dimensions of the module
         self.inpt_dim = inpt_dim
         self.outp_dim = outp_dim
+        self.hidden_dim = hidden_dim if hidden_dim is not None else outp_dim
         self.ctxt_dim = ctxt_dim
         self.init_zeros = init_zeros
 
@@ -105,13 +110,14 @@ class MLPBlock(nn.Module):
         self.block = nn.ModuleList()
         for n in range(n_layers):
             # Increase the input dimension of the first layer to include context
-            lyr_in = inpt_dim + ctxt_dim if n == 0 else outp_dim
+            lyr_in = inpt_dim + ctxt_dim if n == 0 else self.hidden_dim
+            lyr_out = outp_dim if n == n_layers - 1 else self.hidden_dim
 
             # Linear transform, activation, normalisation, dropout
             self.block.append(
-                BayesianLinear(lyr_in, outp_dim)
+                BayesianLinear(lyr_in, lyr_out)
                 if do_bayesian
-                else nn.Linear(lyr_in, outp_dim, bias=use_bias)
+                else nn.Linear(lyr_in, lyr_out, bias=use_bias)
             )
 
             # Initialise the final layer with zeros
@@ -125,7 +131,7 @@ class MLPBlock(nn.Module):
             if act != "none":
                 self.block.append(get_act(act))
             if nrm != "none" and not with_zeros:  # Dont norm after just using zeros
-                self.block.append(get_nrm(nrm, outp_dim))
+                self.block.append(get_nrm(nrm, lyr_out))
 
             if scale_output is not None and n == n_layers - 1:
                 self.block.append(Scaling(outp_dim, scale_output))
@@ -165,6 +171,128 @@ class MLPBlock(nn.Module):
 
     def __repr__(self) -> str:
         """Generate a one line string summing up the components of the block."""
+        string = str(self.inpt_dim)
+        if self.ctxt_dim:
+            string += f"({self.ctxt_dim})"
+        for b in self.block:
+            string += "->"
+            string += str(b).split("(", 1)[0]
+            if self.init_zeros and isinstance(b, nn.Linear):
+                string += "0"
+        string += "->" + str(self.outp_dim)
+        if self.do_res:
+            string += "(add)"
+        return string
+
+
+class _HalfLinearHalfAct(nn.Module):
+    """Applies identity to half the features and a chosen activation to the rest."""
+
+    def __init__(self, act: str):
+        super().__init__()
+        self.act = get_act(act)
+
+    def forward(self, x: T.Tensor) -> T.Tensor:
+        # For odd feature counts, keep one extra feature in the linear path.
+        split_idx = (x.shape[-1] + 1) // 2
+        x_lin = x[..., :split_idx]
+        x_act = x[..., split_idx:]
+        if x_act.numel() == 0:
+            return x_lin
+        return T.cat([x_lin, self.act(x_act)], dim=-1)
+
+
+class HalfActivatedMLPBlock(nn.Module):
+    """MLPBlock-like module with mixed activations in hidden layers.
+
+    Hidden layers use:
+    - identity on half of the neurons
+    - provided activation on the other half
+
+    The final layer is always linear (no activation).
+    """
+
+    def __init__(
+        self,
+        inpt_dim: int,
+        outp_dim: int,
+        hidden_dim: int | None = None,
+        ctxt_dim: int = 0,
+        n_layers: int = 1,
+        act: str = "silu",
+        nrm: str = "none",
+        drp: float = 0,
+        do_res: bool = False,
+        do_bayesian: bool = False,
+        init_zeros: bool = False,
+        use_bias: bool = True,
+        scale_output=None,
+        scale_residual=None,
+    ) -> None:
+        super().__init__()
+
+        self.inpt_dim = inpt_dim
+        self.outp_dim = outp_dim
+        self.hidden_dim = hidden_dim if hidden_dim is not None else outp_dim
+        self.ctxt_dim = ctxt_dim
+        self.init_zeros = init_zeros
+
+        if do_res == "adjust":
+            self.do_res = do_res
+        else:
+            self.do_res = do_res and (inpt_dim == outp_dim)
+
+        self.block = nn.ModuleList()
+        for n in range(n_layers):
+            lyr_in = inpt_dim + ctxt_dim if n == 0 else self.hidden_dim
+            lyr_out = outp_dim if n == n_layers - 1 else self.hidden_dim
+
+            self.block.append(
+                BayesianLinear(lyr_in, lyr_out)
+                if do_bayesian
+                else nn.Linear(lyr_in, lyr_out, bias=use_bias)
+            )
+
+            with_zeros = init_zeros and n == n_layers - 1 and not do_bayesian
+            if with_zeros:
+                self.block[-1].weight.data.fill_(0)
+                if use_bias:
+                    self.block[-1].bias.data.fill_(0)
+
+            is_final = n == n_layers - 1
+            if (not is_final) and act != "none":
+                self.block.append(_HalfLinearHalfAct(act))
+
+            if nrm != "none" and not with_zeros:
+                self.block.append(get_nrm(nrm, lyr_out))
+
+            if scale_output is not None and is_final:
+                self.block.append(Scaling(outp_dim, scale_output))
+
+            if drp > 0:
+                self.block.append(nn.Dropout(drp))
+
+    def forward(self, inpt: T.Tensor, ctxt: T.Tensor | None = None) -> T.Tensor:
+        if self.ctxt_dim and ctxt is None:
+            raise ValueError(
+                "Was expecting contextual information but none has been provided!"
+            )
+        temp = T.cat([inpt, ctxt], dim=-1) if self.ctxt_dim else inpt
+
+        for layer in self.block:
+            temp = layer(temp)
+
+        if self.do_res == "adjust":
+            if self.inpt_dim < self.outp_dim:
+                temp[:, : self.inpt_dim] += inpt
+            else:
+                temp += inpt[:, : self.outp_dim]
+        elif self.do_res:
+            temp = temp + inpt
+
+        return temp
+
+    def __repr__(self) -> str:
         string = str(self.inpt_dim)
         if self.ctxt_dim:
             string += f"({self.ctxt_dim})"

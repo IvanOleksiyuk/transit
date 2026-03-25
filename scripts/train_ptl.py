@@ -16,8 +16,32 @@ import sys
 import os
 
 from transit.src.utils.hydra_utils import instantiate_collection, log_hyperparameters, print_config, reload_original_config, save_config
+from transit.src.utils.model_visualization import visualize_fx_graph_png
 
 log = logging.getLogger(__name__)
+
+
+def export_model_visualizations(model, output_dir: Path) -> None:
+    """Export FX graph PNGs for model components when available."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    modules_to_plot = []
+    if hasattr(model, "encoder1") and isinstance(model.encoder1, T.nn.Module):
+        modules_to_plot.append(("encoder1", model.encoder1))
+    if hasattr(model, "decoder") and isinstance(model.decoder, T.nn.Module):
+        modules_to_plot.append(("decoder", model.decoder))
+    if hasattr(model, "discriminator") and isinstance(model.discriminator, T.nn.Module):
+        modules_to_plot.append(("discriminator", model.discriminator))
+    if hasattr(model, "discriminator2") and isinstance(model.discriminator2, T.nn.Module):
+        modules_to_plot.append(("discriminator2", model.discriminator2))
+
+    for name, module in modules_to_plot:
+        out_file = output_dir / f"fx_graph_{name}.png"
+        try:
+            saved_path = visualize_fx_graph_png(module, out_file)
+            log.info(f"Saved FX graph for {name}: {saved_path}")
+        except Exception as err:
+            log.warning(f"Could not generate FX graph for {name}: {err}")
 
 def epoch_milestone_list_scale(array, scale):
     new_array = []
@@ -136,6 +160,9 @@ def main(cfg: DictConfig) -> None:
     log.info("Instantiating the model")
     model = hydra.utils.instantiate(cfg.model, inpt_dim=datamodule.get_dims(), var_group_list=datamodule.get_var_group_list(), seed=cfg.seed, dequantization_cfg=dequantization_cfg)
     log.info(model)
+
+    log.info("Exporting model visualizations")
+    export_model_visualizations(model, Path(cfg.paths.full_path))
 
     log.info("Saving config so job can be resumed")
     save_config(cfg)

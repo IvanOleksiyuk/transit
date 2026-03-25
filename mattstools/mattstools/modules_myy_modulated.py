@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from .bayesian import BayesianLinear
 from .torch_utils import get_act, get_nrm, masked_pool, smart_cat
-from .modules_myy import MLPBlock
+from .modules_myy import MLPBlock, HalfActivatedMLPBlock
 
 
 class _ShakeShakeMix(T.autograd.Function):
@@ -292,7 +292,8 @@ class SelfModulatedFeatureLayer(nn.Module):
         ctxt_dim: int = 0,
         hidden: int = 32,
         bias_hidden: int = 16,
-        act: str = "lrlu",
+        n_layers: int = 2,
+        act: str = "silu",
         nrm: str = "none",
         drp: float = 0.0,
         gate: str = "sigmoid",
@@ -304,12 +305,13 @@ class SelfModulatedFeatureLayer(nn.Module):
         self.ctxt_dim = ctxt_dim
         self.gate = gate
 
-        # Use your MLPBlock so activations/norm/dropout match the rest of the codebase
-        self.v_net = MLPBlock(
+        # Use your HalfActivatedMLPBlock so activations/norm/dropout match the rest of the codebase
+        self.v_net = HalfActivatedMLPBlock(
             inpt_dim=d,
             outp_dim=d,
+            hidden_dim=hidden,
             ctxt_dim=ctxt_dim,
-            n_layers=2,
+            n_layers=n_layers,
             act=act,
             nrm=nrm,
             drp=drp,
@@ -318,11 +320,12 @@ class SelfModulatedFeatureLayer(nn.Module):
             use_bias=use_bias,
         )
 
-        self.q_net = MLPBlock(
+        self.q_net = HalfActivatedMLPBlock(
             inpt_dim=d,
             outp_dim=d,
+            hidden_dim=hidden,
             ctxt_dim=ctxt_dim,
-            n_layers=2,
+            n_layers=n_layers,
             act=act,
             nrm=nrm,
             drp=drp,
@@ -332,11 +335,12 @@ class SelfModulatedFeatureLayer(nn.Module):
         )
 
         # Small bias MLP (intentionally smaller capacity)
-        self.beta_net = MLPBlock(
+        self.beta_net = HalfActivatedMLPBlock(
             inpt_dim=d,
             outp_dim=d,
+            hidden_dim=bias_hidden,
             ctxt_dim=ctxt_dim,
-            n_layers=2,
+            n_layers=n_layers,
             act=act,
             nrm=nrm,
             drp=drp,
@@ -344,7 +348,7 @@ class SelfModulatedFeatureLayer(nn.Module):
             init_zeros=init_zeros,
             use_bias=use_bias,
             # If you want to enforce "small", pass smaller hidden via DenseNetwork instead;
-            # MLPBlock width is fixed to outp_dim, so we keep it shallow here.
+            # HalfActivatedMLPBlock width is fixed to outp_dim, so we keep it shallow here.
         )
 
         # If you really want a smaller hidden for beta, replace beta_net with a DenseNetwork
@@ -380,7 +384,8 @@ class ContextOnlyVBetaModulatedFeatureLayer(nn.Module):
         ctxt_dim: int,
         hidden: int = 32,
         bias_hidden: int = 16,
-        act: str = "lrlu",
+        n_layers: int = 2,
+        act: str = "silu",
         nrm: str = "none",
         drp: float = 0.0,
         gate: str = "sigmoid",
@@ -399,11 +404,12 @@ class ContextOnlyVBetaModulatedFeatureLayer(nn.Module):
         self.gate_uses_ctxt = gate_uses_ctxt
 
         # Context-only value branch v(ctxt)
-        self.v_net = MLPBlock(
+        self.v_net = HalfActivatedMLPBlock(
             inpt_dim=ctxt_dim,
             outp_dim=d,
+            hidden_dim=hidden,
             ctxt_dim=0,
-            n_layers=2,
+            n_layers=n_layers,
             act=act,
             nrm=nrm,
             drp=drp,
@@ -413,11 +419,12 @@ class ContextOnlyVBetaModulatedFeatureLayer(nn.Module):
         )
 
         # Gate branch gate(x, ctxt)
-        self.q_net = MLPBlock(
+        self.q_net = HalfActivatedMLPBlock(
             inpt_dim=d,
             outp_dim=d,
+            hidden_dim=hidden,
             ctxt_dim=ctxt_dim if gate_uses_ctxt else 0,
-            n_layers=2,
+            n_layers=n_layers,
             act=act,
             nrm=nrm,
             drp=drp,
@@ -427,11 +434,12 @@ class ContextOnlyVBetaModulatedFeatureLayer(nn.Module):
         )
 
         # Context-only bias branch beta(ctxt)
-        self.beta_net = MLPBlock(
+        self.beta_net = HalfActivatedMLPBlock(
             inpt_dim=ctxt_dim,
             outp_dim=d,
+            hidden_dim=bias_hidden,
             ctxt_dim=0,
-            n_layers=2,
+            n_layers=n_layers,
             act=act,
             nrm=nrm,
             drp=drp,
@@ -460,6 +468,193 @@ class ContextOnlyVBetaModulatedFeatureLayer(nn.Module):
         return x + v * g + beta
 
 
+class MultiHeadContextOnlyVBetaModulatedFeatureLayer(nn.Module):
+    """
+    Multi-head context-only modulation:
+        y = x + sum_h gate_h(ctxt) * value_h(x[,ctxt]) + beta(ctxt)
+
+    - All gate heads are produced by one context MLP.
+    - All value heads are produced by another MLP that always uses x and can
+      optionally also use ctxt.
+    - The head aggregation uses a dot product over the head axis.
+    """
+
+    def __init__(
+        self,
+        d: int,
+        ctxt_dim: int,
+        num_heads: int = 4,
+        hidden: int = None,
+        bias_hidden: int = 16,
+        n_layers: int = 2,
+        act: str = "silu",
+        nrm: str = "none",
+        drp: float = 0.0,
+        gate: str = "tanh",
+        value_uses_ctxt: bool = True,
+        init_zeros: bool = False,
+        use_bias: bool = True,
+    ):
+        super().__init__()
+
+        if ctxt_dim <= 0:
+            raise ValueError("MultiHeadContextOnlyVBetaModulatedFeatureLayer requires ctxt_dim > 0")
+        if num_heads < 0:
+            raise ValueError("num_heads must be >= 0")
+
+        self.d = d
+        self.ctxt_dim = ctxt_dim
+        self.num_heads = num_heads
+        self.gate = gate
+        self.value_uses_ctxt = value_uses_ctxt
+        self.hidden = hidden
+        self.bias_hidden = bias_hidden
+
+        # Context-only branches for gate/value heads. When num_heads == 0,
+        # the head modulation path is disabled and only beta(ctxt) is used.
+        if self.num_heads > 0:
+            self.gate_net = HalfActivatedMLPBlock(
+                inpt_dim=ctxt_dim,
+                outp_dim=num_heads * d,
+                hidden_dim=hidden,
+                ctxt_dim=0,
+                n_layers=n_layers,
+                act=act,
+                nrm=nrm,
+                drp=drp,
+                do_res=False,
+                init_zeros=init_zeros,
+                use_bias=use_bias,
+            )
+
+            self.value_net = HalfActivatedMLPBlock(
+                inpt_dim=d,
+                outp_dim=num_heads * d,
+                hidden_dim=hidden,
+                ctxt_dim=ctxt_dim if value_uses_ctxt else 0,
+                n_layers=n_layers,
+                act=act,
+                nrm=nrm,
+                drp=drp,
+                do_res=False,
+                init_zeros=init_zeros,
+                use_bias=use_bias,
+            )
+        else:
+            self.gate_net = None
+            self.value_net = None
+
+        # Context-only bias branch beta(ctxt).
+        self.beta_net = HalfActivatedMLPBlock(
+            inpt_dim=ctxt_dim,
+            outp_dim=d,
+            hidden_dim=bias_hidden,
+            ctxt_dim=0,
+            n_layers=n_layers,
+            act=act,
+            nrm=nrm,
+            drp=drp,
+            do_res=False,
+            init_zeros=init_zeros,
+            use_bias=use_bias,
+        )
+
+    def _apply_gate(self, logits: T.Tensor) -> T.Tensor:
+        if self.gate == "sigmoid":
+            return T.sigmoid(logits)
+        if self.gate == "tanh":
+            return T.tanh(logits)
+        if self.gate == "softplus":
+            return T.nn.functional.softplus(logits)
+        if self.gate == "softmax":
+            return T.softmax(logits, dim=-2)
+        raise ValueError(f"Unknown gate type: {self.gate}")
+
+    def forward(self, x: T.Tensor, ctxt: T.Tensor | None = None) -> T.Tensor:
+        if ctxt is None:
+            raise ValueError("ctxt must be provided for MultiHeadContextOnlyVBetaModulatedFeatureLayer")
+
+        if self.num_heads > 0:
+            gate_logits = self.gate_net(ctxt).view(*ctxt.shape[:-1], self.num_heads, self.d)
+            value_ctxt = ctxt if self.value_uses_ctxt else None
+            values = self.value_net(x, value_ctxt).view(*x.shape[:-1], self.num_heads, self.d)
+
+            gates = self._apply_gate(gate_logits)
+            delta = T.einsum("...hd,...hd->...d", gates, values)
+        else:
+            delta = T.zeros_like(x)
+
+        beta = self.beta_net(ctxt)
+        return x + delta + beta
+
+
+class SingleLayerMultiHeadContextOnlyVBetaNetwork(nn.Module):
+    """A minimal network made of exactly one multi-head context-only layer.
+
+    Input and output feature dimensions are identical.
+    """
+
+    def __init__(
+        self,
+        inpt_dim: int,
+        ctxt_dim: int,
+        outp_dim: int = 0,
+        num_heads: int = 4,
+        hidden: int = None,
+        bias_hidden: int = 32,
+        n_layers: int = 3,
+        act: str = "silu",
+        nrm: str = "none",
+        drp: float = 0.0,
+        gate: str = "tanh",
+        value_uses_ctxt: bool = True,
+        init_zeros: bool = False,
+        use_bias: bool = True,
+    ):
+        super().__init__()
+
+        if outp_dim not in (0, inpt_dim):
+            raise ValueError(
+                "SingleLayerMultiHeadContextOnlyVBetaNetwork enforces outp_dim == inpt_dim. "
+                f"Got inpt_dim={inpt_dim}, outp_dim={outp_dim}."
+            )
+
+        self.inpt_dim = inpt_dim
+        self.outp_dim = inpt_dim
+        self.ctxt_dim = ctxt_dim
+
+        self.layer = MultiHeadContextOnlyVBetaModulatedFeatureLayer(
+            d=inpt_dim,
+            ctxt_dim=ctxt_dim,
+            num_heads=num_heads,
+            hidden=hidden,
+            bias_hidden=bias_hidden,
+            n_layers=n_layers,
+            act=act,
+            nrm=nrm,
+            drp=drp,
+            gate=gate,
+            value_uses_ctxt=value_uses_ctxt,
+            init_zeros=init_zeros,
+            use_bias=use_bias,
+        )
+
+    def forward(self, inputs: T.Tensor, ctxt: T.Tensor | None = None) -> T.Tensor:
+        if ctxt is None:
+            raise ValueError("ctxt must be provided for SingleLayerMultiHeadContextOnlyVBetaNetwork")
+
+        # Broadcast ctxt like the other network wrappers when rank differs.
+        dim_diff = inputs.dim() - ctxt.dim()
+        if dim_diff > 0:
+            ctxt = ctxt.view(ctxt.shape[0], *dim_diff * (1,), *ctxt.shape[1:])
+            ctxt = ctxt.expand(*inputs.shape[:-1], -1)
+
+        return self.layer(inputs, ctxt)
+
+    def __repr__(self):
+        return f"SingleLayerMultiHeadContextOnlyVBetaNetwork({self.inpt_dim}->{self.outp_dim})"
+
+
 class ShakeShakeContextOnlyVBetaModulatedFeatureLayer(nn.Module):
     """
     Context-only v/beta modulation with shake-shake regularization:
@@ -479,7 +674,8 @@ class ShakeShakeContextOnlyVBetaModulatedFeatureLayer(nn.Module):
         ctxt_dim: int,
         hidden: int = 32,
         bias_hidden: int = 16,
-        act: str = "lrlu",
+        n_layers: int = 2,
+        act: str = "silu",
         nrm: str = "none",
         drp: float = 0.0,
         gate: str = "sigmoid",
@@ -498,11 +694,12 @@ class ShakeShakeContextOnlyVBetaModulatedFeatureLayer(nn.Module):
         self.gate_uses_ctxt = gate_uses_ctxt
 
         # Branch 1
-        self.v_net_1 = MLPBlock(
+        self.v_net_1 = HalfActivatedMLPBlock(
             inpt_dim=ctxt_dim,
             outp_dim=d,
+            hidden_dim=hidden,
             ctxt_dim=0,
-            n_layers=2,
+            n_layers=n_layers,
             act=act,
             nrm=nrm,
             drp=drp,
@@ -510,11 +707,12 @@ class ShakeShakeContextOnlyVBetaModulatedFeatureLayer(nn.Module):
             init_zeros=init_zeros,
             use_bias=use_bias,
         )
-        self.q_net_1 = MLPBlock(
+        self.q_net_1 = HalfActivatedMLPBlock(
             inpt_dim=d,
             outp_dim=d,
+            hidden_dim=hidden,
             ctxt_dim=ctxt_dim if gate_uses_ctxt else 0,
-            n_layers=2,
+            n_layers=n_layers,
             act=act,
             nrm=nrm,
             drp=drp,
@@ -522,11 +720,12 @@ class ShakeShakeContextOnlyVBetaModulatedFeatureLayer(nn.Module):
             init_zeros=init_zeros,
             use_bias=use_bias,
         )
-        self.beta_net_1 = MLPBlock(
+        self.beta_net_1 = HalfActivatedMLPBlock(
             inpt_dim=ctxt_dim,
             outp_dim=d,
+            hidden_dim=bias_hidden,
             ctxt_dim=0,
-            n_layers=2,
+            n_layers=n_layers,
             act=act,
             nrm=nrm,
             drp=drp,
@@ -536,11 +735,12 @@ class ShakeShakeContextOnlyVBetaModulatedFeatureLayer(nn.Module):
         )
 
         # Branch 2
-        self.v_net_2 = MLPBlock(
+        self.v_net_2 = HalfActivatedMLPBlock(
             inpt_dim=ctxt_dim,
             outp_dim=d,
+            hidden_dim=hidden,
             ctxt_dim=0,
-            n_layers=2,
+            n_layers=n_layers,
             act=act,
             nrm=nrm,
             drp=drp,
@@ -548,11 +748,12 @@ class ShakeShakeContextOnlyVBetaModulatedFeatureLayer(nn.Module):
             init_zeros=init_zeros,
             use_bias=use_bias,
         )
-        self.q_net_2 = MLPBlock(
+        self.q_net_2 = HalfActivatedMLPBlock(
             inpt_dim=d,
             outp_dim=d,
+            hidden_dim=hidden,
             ctxt_dim=ctxt_dim if gate_uses_ctxt else 0,
-            n_layers=2,
+            n_layers=n_layers,
             act=act,
             nrm=nrm,
             drp=drp,
@@ -560,11 +761,12 @@ class ShakeShakeContextOnlyVBetaModulatedFeatureLayer(nn.Module):
             init_zeros=init_zeros,
             use_bias=use_bias,
         )
-        self.beta_net_2 = MLPBlock(
+        self.beta_net_2 = HalfActivatedMLPBlock(
             inpt_dim=ctxt_dim,
             outp_dim=d,
+            hidden_dim=bias_hidden,
             ctxt_dim=0,
-            n_layers=2,
+            n_layers=n_layers,
             act=act,
             nrm=nrm,
             drp=drp,
@@ -615,7 +817,7 @@ class ModulatedBlock(nn.Module):
         pre_dense:  x -> h
         mod:        h -> h   (SelfModulatedFeatureLayer)
         post_dense: h -> y
-        residual:   y += x (if dims match, or "adjust" like your MLPBlock)
+        residual:   y += x (if dims match, or "adjust" like your HalfActivatedMLPBlock)
     """
     def __init__(
         self,
@@ -624,15 +826,19 @@ class ModulatedBlock(nn.Module):
         ctxt_dim: int = 0,
         pre_layers: int = 1,
         post_layers: int = 1,
-        act: str = "lrlu",
+        act: str = "silu",
         nrm: str = "none",
         drp: float = 0.0,
         do_res: bool | str = False,   # False | True | "adjust"
         use_bias: bool = True,
         mod_hidden: int = 32,
         mod_bias_hidden: int = 16,
+        mod_n_layers: int = 2,
         gate: str = "sigmoid",
         context_only_vbeta: bool = False,
+        use_multi_head_context_only_vbeta: bool = False,
+        multi_head_num_heads: int = 4,
+        value_uses_ctxt: bool = True,
         use_shake_shake: bool = False,
         gate_uses_ctxt: bool = True,
         init_zeros_post: bool = False,
@@ -642,13 +848,13 @@ class ModulatedBlock(nn.Module):
         self.outp_dim = outp_dim
         self.ctxt_dim = ctxt_dim
 
-        # Residual behavior: mimic MLPBlock semantics
+        # Residual behavior: mimic HalfActivatedMLPBlock semantics
         if do_res == "adjust":
             self.do_res = "adjust"
         else:
             self.do_res = bool(do_res) and (inpt_dim == outp_dim)
 
-        self.pre = MLPBlock(
+        self.pre = HalfActivatedMLPBlock(
             inpt_dim=inpt_dim,
             outp_dim=outp_dim,          # keep it simple: pre brings to block width
             ctxt_dim=ctxt_dim,
@@ -664,12 +870,34 @@ class ModulatedBlock(nn.Module):
             if ctxt_dim <= 0:
                 raise ValueError("context_only_vbeta=True requires ctxt_dim > 0 in ModulatedBlock")
 
-            if use_shake_shake:
+            if use_multi_head_context_only_vbeta and use_shake_shake:
+                raise ValueError(
+                    "use_multi_head_context_only_vbeta=True is incompatible with use_shake_shake=True"
+                )
+
+            if use_multi_head_context_only_vbeta:
+                self.mod = MultiHeadContextOnlyVBetaModulatedFeatureLayer(
+                    d=outp_dim,
+                    ctxt_dim=ctxt_dim,
+                    num_heads=multi_head_num_heads,
+                    hidden=mod_hidden,
+                    bias_hidden=mod_bias_hidden,
+                    n_layers=mod_n_layers,
+                    act=act,
+                    nrm=nrm,
+                    drp=drp,
+                    gate=gate,
+                    value_uses_ctxt=value_uses_ctxt,
+                    init_zeros=False,
+                    use_bias=use_bias,
+                )
+            elif use_shake_shake:
                 self.mod = ShakeShakeContextOnlyVBetaModulatedFeatureLayer(
                     d=outp_dim,
                     ctxt_dim=ctxt_dim,
                     hidden=mod_hidden,
                     bias_hidden=mod_bias_hidden,
+                    n_layers=mod_n_layers,
                     act=act,
                     nrm=nrm,
                     drp=drp,
@@ -684,6 +912,7 @@ class ModulatedBlock(nn.Module):
                     ctxt_dim=ctxt_dim,
                     hidden=mod_hidden,
                     bias_hidden=mod_bias_hidden,
+                    n_layers=mod_n_layers,
                     act=act,
                     nrm=nrm,
                     drp=drp,
@@ -698,6 +927,7 @@ class ModulatedBlock(nn.Module):
                 ctxt_dim=ctxt_dim,
                 hidden=mod_hidden,
                 bias_hidden=mod_bias_hidden,
+                n_layers=mod_n_layers,
                 act=act,
                 nrm=nrm,
                 drp=drp,
@@ -706,7 +936,7 @@ class ModulatedBlock(nn.Module):
                 use_bias=use_bias,
             )
 
-        self.post = MLPBlock(
+        self.post = HalfActivatedMLPBlock(
             inpt_dim=outp_dim,
             outp_dim=outp_dim,
             ctxt_dim=ctxt_dim,
@@ -742,7 +972,7 @@ class ModulatedNetwork(nn.Module):
 
     Notes:
     - Context handling matches DenseNetwork (broadcast ctxt to input shape).
-    - By default: ctxt injected into input+hidden+output blocks similarly to DenseNetwork.
+    - Input/output MLP blocks are optional and disabled by default.
     """
     def __init__(
         self,
@@ -752,12 +982,13 @@ class ModulatedNetwork(nn.Module):
         hddn_dim: int | list = 32,
         num_blocks: int = 1,
         # pre/post depths inside each modulated block
+        do_inpt: bool = False,
         pre_layers: int = 1,
         post_layers: int = 1,
-        act_h: str = "lrlu",
+        act_h: str = "silu",
         act_o: str = "none",
         act_i: str | None = None,
-        do_out: bool = True,
+        do_out: bool = False,
         nrm: str = "none",
         drp: float = 0.0,
         drp_on_output: bool = False,
@@ -771,7 +1002,11 @@ class ModulatedNetwork(nn.Module):
         gate: str = "sigmoid",
         mod_hidden: int = 32,
         mod_bias_hidden: int = 16,
+        mod_n_layers: int = 2,
         context_only_vbeta: bool = False,
+        use_multi_head_context_only_vbeta: bool = False,
+        multi_head_num_heads: int = 4,
+        value_uses_ctxt: bool = True,
         use_shake_shake: bool = False,
         gate_uses_ctxt: bool = True,
         # init options
@@ -793,28 +1028,40 @@ class ModulatedNetwork(nn.Module):
 
         self.num_blocks = len(self.hddn_dim)
         self.ctxt_dim = ctxt_dim
+        self.do_inpt = do_inpt
         self.do_out = do_out
         self.unit_in_out_res = unit_in_out_res
 
-        self.outp_dim = outp_dim or inpt_dim if do_out else self.hddn_dim[-1]
-        self.hidden_features = self.hddn_dim[-1]  # nflows compat, like DenseNetwork
+        if self.do_inpt and self.num_blocks == 0:
+            raise ValueError("do_inpt=True requires at least one hidden block")
 
-        # Input block (plain MLPBlock, like DenseNetwork)
-        self.input_block = MLPBlock(
-            inpt_dim=self.inpt_dim,
-            outp_dim=self.hddn_dim[0],
-            ctxt_dim=self.ctxt_dim if ctxt_in_inpt else 0,
-            n_layers=1,
-            act=act_i or act_h,
-            nrm=nrm,
-            drp=drp,
-            do_res=do_res,
-            use_bias=use_bias,
-        )
+        # Input block (optional plain HalfActivatedMLPBlock, like DenseNetwork)
+        if self.do_inpt:
+            self.input_block = HalfActivatedMLPBlock(
+                inpt_dim=self.inpt_dim,
+                outp_dim=self.hddn_dim[0],
+                ctxt_dim=self.ctxt_dim if ctxt_in_inpt else 0,
+                n_layers=1,
+                act=act_i or act_h,
+                nrm=nrm,
+                drp=drp,
+                do_res=do_res,
+                use_bias=use_bias,
+            )
+        else:
+            self.input_block = None
 
         # Hidden modulated blocks
         self.hidden_blocks = nn.ModuleList()
-        for h_1, h_2 in zip(self.hddn_dim[:-1], self.hddn_dim[1:]):
+        block_dims = []
+        if self.num_blocks > 0:
+            if self.do_inpt:
+                block_dims.extend(zip(self.hddn_dim[:-1], self.hddn_dim[1:]))
+            else:
+                block_dims.append((self.inpt_dim, self.hddn_dim[0]))
+                block_dims.extend(zip(self.hddn_dim[:-1], self.hddn_dim[1:]))
+
+        for h_1, h_2 in block_dims:
             self.hidden_blocks.append(
                 ModulatedBlock(
                     inpt_dim=h_1,
@@ -830,17 +1077,38 @@ class ModulatedNetwork(nn.Module):
                     gate=gate,
                     mod_hidden=mod_hidden,
                     mod_bias_hidden=mod_bias_hidden,
+                    mod_n_layers=mod_n_layers,
                     context_only_vbeta=context_only_vbeta,
+                    use_multi_head_context_only_vbeta=use_multi_head_context_only_vbeta,
+                    multi_head_num_heads=multi_head_num_heads,
+                    value_uses_ctxt=value_uses_ctxt,
                     use_shake_shake=use_shake_shake,
                     gate_uses_ctxt=gate_uses_ctxt,
                     init_zeros_post=hddn_init_zeros,
                 )
             )
 
-        # Output block (plain MLPBlock, like DenseNetwork)
+        if self.num_blocks > 0:
+            if self.do_inpt and len(self.hidden_blocks) == 0:
+                core_out_dim = self.hddn_dim[0]
+            else:
+                core_out_dim = self.hddn_dim[-1]
+        else:
+            core_out_dim = self.inpt_dim
+
+        if (not do_out) and outp_dim and (outp_dim != core_out_dim):
+            raise ValueError(
+                "ModulatedNetwork was given outp_dim != core output dim, but do_out=False. "
+                "Set do_out=True to project to outp_dim, or leave outp_dim unset/matching core width."
+            )
+
+        self.hidden_features = core_out_dim  # nflows compat, like DenseNetwork
+        self.outp_dim = (outp_dim or inpt_dim) if do_out else core_out_dim
+
+        # Output block (plain HalfActivatedMLPBlock, like DenseNetwork)
         if do_out:
-            self.output_block = MLPBlock(
-                inpt_dim=self.hddn_dim[-1],
+            self.output_block = HalfActivatedMLPBlock(
+                inpt_dim=core_out_dim,
                 outp_dim=self.outp_dim,
                 ctxt_dim=self.ctxt_dim if ctxt_in_out else 0,
                 n_layers=1,
@@ -851,6 +1119,8 @@ class ModulatedNetwork(nn.Module):
                 do_res=do_res,
                 use_bias=use_bias,
             )
+        else:
+            self.output_block = None
 
     def forward(self, inputs: T.Tensor, ctxt: T.Tensor | None = None) -> T.Tensor:
         # Broadcast ctxt like DenseNetwork
@@ -860,12 +1130,12 @@ class ModulatedNetwork(nn.Module):
                 ctxt = ctxt.view(ctxt.shape[0], *dim_diff * (1,), *ctxt.shape[1:])
                 ctxt = ctxt.expand(*inputs.shape[:-1], -1)
 
-        x = self.input_block(inputs, ctxt)
+        x = self.input_block(inputs, ctxt) if self.input_block is not None else inputs
 
         for blk in self.hidden_blocks:
             x = blk(x, ctxt)
 
-        if self.do_out:
+        if self.do_out and self.output_block is not None:
             x = self.output_block(x, ctxt)
 
         if self.unit_in_out_res and self.do_out:
@@ -878,9 +1148,10 @@ class ModulatedNetwork(nn.Module):
 
     def __repr__(self):
         string = ""
-        string += "\n  (inp): " + repr(self.input_block) + "\n"
+        if self.input_block is not None:
+            string += "\n  (inp): " + repr(self.input_block) + "\n"
         for i, blk in enumerate(self.hidden_blocks):
             string += f"  (m-{i+1}): {blk.__class__.__name__}({blk.inpt_dim}->{blk.outp_dim})\n"
-        if self.do_out:
+        if self.do_out and self.output_block is not None:
             string += "  (out): " + repr(self.output_block)
         return string
