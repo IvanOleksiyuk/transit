@@ -7,17 +7,19 @@ network_type: partial_context
 _target_: transit.src.models.transit_model.TRANSIT
 use_m_encodig: True
 encoder_cfg:
-  _target_: transit.mattstools.mattstools.modules_myy_modulated.SingleLayerMultiHeadContextOnlyVBetaNetwork
+  _target_: transit.mattstools.mattstools.modules_myy_modulated.ShakeShakeSingleLayerMultiHeadContextOnlyVBetaNetwork
   _partial_: true
   act: silu
+  gate_uses_ctxt: True
   nrm: none
-  num_heads: 2
+  num_heads: 8
 decoder_cfg:
-  _target_: transit.mattstools.mattstools.modules_myy_modulated.SingleLayerMultiHeadContextOnlyVBetaNetwork
+  _target_: transit.mattstools.mattstools.modules_myy_modulated.ShakeShakeSingleLayerMultiHeadContextOnlyVBetaNetwork
   _partial_: true
+  gate_uses_ctxt: False
   act: silu
   nrm: none
-  num_heads: 2
+  num_heads: 8
 latent_norm: False
 latent_dim: 6
 loss_cfg:
@@ -32,7 +34,7 @@ loss_cfg:
 adversarial_cfg:
   mode: "double_discriminator_priority"
   discriminator2:
-    _target_: transit.mltools.mlp.MLP
+    _target_: transit.mattstools.mattstools.modules_myy_modulated.ShakeShakeHalfActivatedMLP
     _partial_: true
     outp_dim: 1
     hddn_dim: [64, 64, 64, 64]
@@ -40,6 +42,7 @@ adversarial_cfg:
     ctxt_in_inpt: True
     act_h: "silu"
     act_o: "sigmoid"
+    num_branches: 5
   optimizer_main: default.yaml
   optimizer_d: default.yaml
   warmup: 5
@@ -66,6 +69,7 @@ adversarial_cfg:
       milestones: [30, 100, 150, 175]
       gamma: 0.5
   gradient_clip_val: 0.1
+
 
 valid_plots: ${verbose_validation}
 add_standardizing_layer: True

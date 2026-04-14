@@ -144,11 +144,16 @@ def main(cfg: DictConfig) -> None:
     log.info("Scale N epochs with dataseize") #For very small datasets we have to scale the number of epochs
     if cfg.get("do_scale_epochs", False):
         batches_per_epoch_desired = cfg.get("batches_per_epoch_desired", 100)
-        train_data_length = len(datamodule.train_dataloader().dataset)
-        # get the batch size
-        batch_size = datamodule.train_dataloader().batch_size
-        # get the number of batches
-        num_batches = train_data_length // batch_size
+        train_loader = datamodule.train_dataloader()
+        train_data_length = len(train_loader.dataset)
+        # Works for both regular DataLoader(batch_size=...) and
+        # DataLoader(batch_sampler=...) where batch_size is None.
+        num_batches = len(train_loader)
+        if num_batches <= 0:
+            raise ValueError(
+                "train_dataloader() produced zero batches; "
+                "cannot scale epochs. Check batch settings and dataset sizes."
+            )
         if cfg.do_scale_epochs=="increase_only":
             if num_batches < batches_per_epoch_desired:
                 epoch_scale = batches_per_epoch_desired // num_batches

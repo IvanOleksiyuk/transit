@@ -48,6 +48,38 @@ def off_diagonal(x):
     assert n == m
     return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
 
+
+def pairwise_distances(a: torch.Tensor, b: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+    """Pairwise Euclidean distances between rows of a and b."""
+    a2 = (a * a).sum(dim=-1, keepdim=True)
+    b2 = (b * b).sum(dim=-1, keepdim=True).T
+    ab = a @ b.T
+    dist2 = (a2 + b2 - 2 * ab).clamp(min=0)
+    return torch.sqrt(dist2 + eps)
+
+
+def energy_distance(
+    p_samples: torch.Tensor,
+    q_samples: torch.Tensor,
+    eps: float = 1e-8,
+) -> torch.Tensor:
+    """Unbiased-style energy distance estimator between two sample sets."""
+    cross = pairwise_distances(p_samples, q_samples, eps=eps).mean()
+    intra_p = pairwise_distances(p_samples, p_samples, eps=eps).mean()
+    intra_q = pairwise_distances(q_samples, q_samples, eps=eps).mean()
+    return 2 * cross - intra_p - intra_q
+
+
+class EnergyDistanceLoss(nn.Module):
+    """Energy distance loss between true and generated batches."""
+
+    def __init__(self, eps: float = 1e-8):
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, true_batch: torch.Tensor, generated_batch: torch.Tensor) -> torch.Tensor:
+        return energy_distance(true_batch, generated_batch, eps=self.eps)
+
 class TRANSIT(LightningModule):
     
     def __init__(
@@ -66,6 +98,7 @@ class TRANSIT(LightningModule):
         loss_cfg: Mapping = None,
         transport_loss: str = "adversarial",
         mmd_cfg: Mapping | None = None,
+        energy_cfg: Mapping | None = None,
         use_m_encodig = True,
         input_noise_cfg=None,
         reverse_pass_mode=None,
@@ -106,7 +139,18 @@ class TRANSIT(LightningModule):
         else:
             self.mmd_cfg = mmd_cfg
 
-        if self.transport_loss_mode == "mmd":
+        if energy_cfg is None:
+            self.energy_cfg = SimpleNamespace()
+        elif isinstance(energy_cfg, Mapping):
+            self.energy_cfg = SimpleNamespace(**dict(energy_cfg))
+        else:
+            self.energy_cfg = energy_cfg
+
+        self.energy_distance_loss = EnergyDistanceLoss(
+            eps=float(self._cfg_get(self.energy_cfg, "eps", 1e-8))
+        )
+
+        if self.transport_loss_mode in ["mmd", "energy"]:
             self.adversarial = False
             self.automatic_optimization = True
             self.adversarial_cfg = None
@@ -222,7 +266,9 @@ class TRANSIT(LightningModule):
                 "second_derivative_smoothness",
                 "third_derivative_smoothness",
                 "noised_reco",
-                "consistency_noised"]
+                "consistency_noised",
+                "latent_ed_gaussian",
+                "projected_context_ed_gaussian"]
         for attr in list(self.loss_cfg.keys()):
             if attr in expected_attrs:
                 setattr(self.loss_cfg, attr, getattr(self.loss_cfg, attr, None))
@@ -383,6 +429,42 @@ class TRANSIT(LightningModule):
 
         mmd = _off_diag_mean(K_rr) + _off_diag_mean(K_ff) - 2.0 * K_rf.mean()
         return mmd
+
+    def _compute_energy_distance(self, x_real, m_real, x_fake, m_fake):
+        x_real_flat = x_real.reshape(x_real.shape[0], -1)
+        m_real_flat = m_real.reshape(m_real.shape[0], -1)
+        x_fake_flat = x_fake.reshape(x_fake.shape[0], -1)
+        m_fake_flat = m_fake.reshape(m_fake.shape[0], -1)
+
+        true_batch = torch.cat([x_real_flat, m_real_flat], dim=-1)
+        generated_batch = torch.cat([x_fake_flat, m_fake_flat], dim=-1)
+        return self.energy_distance_loss(true_batch, generated_batch)
+
+    def _compute_projected_context_ed_gaussian(self, content, num_directions: int = 1, eps: float = 1e-8):
+        """Energy distance to a unit Gaussian in 1D random projections of content."""
+        content_flat = content.reshape(content.shape[0], -1)
+
+        n_dims = content_flat.shape[1]
+        num_directions = max(int(num_directions), 1)
+        if n_dims == 1:
+            z = torch.randn_like(content_flat)
+            return energy_distance(content_flat, z, eps=eps)
+
+        directions = torch.randn(
+            num_directions,
+            n_dims,
+            device=content_flat.device,
+            dtype=content_flat.dtype,
+        )
+        directions = F.normalize(directions, dim=1)
+
+        proj_real = content_flat @ directions.T
+        proj_gauss = torch.randn_like(proj_real)
+        losses = [
+            energy_distance(proj_real[:, i:i+1], proj_gauss[:, i:i+1], eps=eps)
+            for i in range(num_directions)
+        ]
+        return torch.stack(losses).mean()
 
     def disc_lat(self, e1, e2):
         if self.style_injection_cond:
@@ -614,6 +696,17 @@ class TRANSIT(LightningModule):
                 else:
                     total_loss += loss_back_vec*self.loss_cfg.consistency_xx.w(self.global_step)
 
+        if self.loss_cfg.latent_ed_gaussian is not None:
+            # Sample from unit Gaussian
+            z = torch.randn_like(content)
+            loss_ed_gaussian = self.energy_distance_loss(content, z)
+            self.log(f"{step_type}/loss_ed_gaussian", loss_ed_gaussian)
+            if self.loss_cfg.latent_ed_gaussian.w is not None:
+                if isinstance(self.loss_cfg.latent_ed_gaussian.w, float) or isinstance(self.loss_cfg.latent_ed_gaussian.w, int):
+                    total_loss += loss_ed_gaussian*self.loss_cfg.latent_ed_gaussian.w
+                else:
+                    total_loss += loss_ed_gaussian*self.loss_cfg.latent_ed_gaussian.w(self.global_step)
+
         # variance loss
         if self.loss_cfg.latent_variance_cfg is not None:
             var = content.var(dim=0)
@@ -653,6 +746,38 @@ class TRANSIT(LightningModule):
             w_mmd = self._cfg_get(self.mmd_cfg, "w", 1.0)
             total_loss += loss_mmd * w_mmd
             self.log(f"{step_type}/loss_mmd", loss_mmd)
+        if self.transport_loss_mode == "energy":
+            loss_energy = self._compute_energy_distance(x_inp, m_pair, x_n, m_n)
+            w_energy = self._cfg_get(self.energy_cfg, "w", 1.0)
+            total_loss += loss_energy * w_energy
+            self.log(f"{step_type}/loss_energy", loss_energy)
+        if self.transport_loss_mode == "energy_pair":
+            # Split the batch in half and compute energy distance between the two halves, to avoid self-distance problems
+            x_inp_half1, x_inp_half2 = torch.chunk(x_inp, 2, dim=0)
+            m_pair_half1, m_pair_half2 = torch.chunk(m_pair, 2, dim=0)
+            x_n_half1, x_n_half2 = torch.chunk(x_n, 2, dim=0)
+            m_n_half1, m_n_half2 = torch.chunk(m_n, 2, dim=0)
+            loss_energy_pair = self._compute_energy_distance(x_inp_half1, m_pair_half1, x_n_half2, m_n_half2) + self._compute_energy_distance(x_inp_half2, m_pair_half2, x_n_half1, m_n_half1)
+            w_energy_pair = self._cfg_get(self.energy_cfg, "w", 1.0)
+            total_loss += loss_energy_pair * w_energy_pair
+            self.log(f"{step_type}/loss_energy", loss_energy_pair)
+
+        if self.loss_cfg.projected_context_ed_gaussian is not None:
+            n_dirs = self._cfg_get(self.loss_cfg.projected_context_ed_gaussian, "num_directions", 1)
+            proj_eps = self._cfg_get(self.loss_cfg.projected_context_ed_gaussian, "eps", 1e-8)
+            loss_projected_context_ed_gaussian = self._compute_projected_context_ed_gaussian(
+                content,
+                num_directions=n_dirs,
+                eps=proj_eps,
+            )
+            self.log(f"{step_type}/loss_projected_context_ed_gaussian", loss_projected_context_ed_gaussian)
+
+            w_proj_ed = self._cfg_get(self.loss_cfg.projected_context_ed_gaussian, "w", None)
+            if w_proj_ed is not None:
+                if isinstance(w_proj_ed, (float, int)):
+                    total_loss += loss_projected_context_ed_gaussian * w_proj_ed
+                else:
+                    total_loss += loss_projected_context_ed_gaussian * w_proj_ed(self.global_step)
 
         # DisCO loss
         if self.loss_cfg.DisCO_loss_cfg is not None:
@@ -687,6 +812,10 @@ class TRANSIT(LightningModule):
             return total_loss
 
     def adversarial_loss(self, y_hat, y):
+        # Ensure consistent shapes
+        y_hat = y_hat.view(-1, 1)
+        y = y.view(-1, 1)
+
         if self.adversarial_cfg.loss_function=="binary_cross_entropy":
             return F.binary_cross_entropy(y_hat, y.reshape((-1, 1)))
         if self.adversarial_cfg.loss_function=="binary_cross_entropy_with_logits":
@@ -695,6 +824,29 @@ class TRANSIT(LightningModule):
             return mse_loss(y_hat, y.reshape((-1, 1)))
         elif self.adversarial_cfg.loss_function=="WGAN":
             return - 2 * torch.mean(y_hat * (y.reshape((-1, 1))-0.5))
+        elif self.adversarial_cfg.loss_function == "hinge":
+            # Convert {0,1} -> {-1,+1}
+            y_signed = 2 * y - 1
+            return torch.mean(F.relu(1 - y_signed * y_hat))
+        elif self.adversarial_cfg.loss_function == "huberised_hinge":
+            y_signed = 2 * y - 1   # {0,1} -> {-1,+1}
+            margin = y_signed * y_hat
+            z = 1 - margin
+
+            delta = getattr(self.adversarial_cfg, "huber_delta", 1.0)
+
+            loss = torch.where(
+                z <= 0,
+                torch.zeros_like(z),
+                torch.where(
+                    z < delta,
+                    0.5 * z**2 / delta,
+                    z - 0.5 * delta
+                )
+            )
+            return loss.mean()
+        else:
+            raise ValueError(f"Unknown loss function: {self.adversarial_cfg.loss_function}")
 
     def training_step(self, sample: tuple, batch_idx: int) -> torch.Tensor:
 
@@ -834,8 +986,11 @@ class TRANSIT(LightningModule):
             max_traj=10
 
         max_traj = min(max_traj, w1_.shape[0])
-        w1 = w1_[:max_traj].detach()  # Avoid deepcopy
-        m_pair = m_pair_[:max_traj]
+        gen = torch.Generator(device="cpu")
+        gen.manual_seed(1)
+        idx = torch.randperm(w1_.shape[0], generator=gen)[:max_traj]
+        w1 = w1_[idx].detach()
+        m_pair = m_pair_[idx]
         content = self.encode_content(w1, m_pair).detach()
         recons = []
         zs = [] if self.adversarial else None
@@ -1134,7 +1289,7 @@ class TRANSIT(LightningModule):
                 "lr_scheduler": {"scheduler": sched, **self.hparams.scheduler.lightning},
             }
 
-    def on_validation_epoch_end(self) -> None:
+    def on_train_epoch_end(self) -> None:
         """Makes several plots of the jets and how they are reconstructed.
         """
         if self.adversarial:

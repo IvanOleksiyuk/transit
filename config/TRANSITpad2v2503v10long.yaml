@@ -1,11 +1,11 @@
 # @package _global_
 
 defaults:
-  - data: PAD_DEFAULT
+  - data: PAD_DEFAULT_flatmass
   - step_train_template: transitv_0v2
   - step_export_template: transit
   - step_evaluate: transit_PAD
-  - override /step_train_template/model: TRANSITv25f_std.yaml
+  - override /step_train_template/model: TRANSITpad2v2503v10.yaml
   - _self_
 
 step_train_template:
@@ -15,7 +15,7 @@ step_train_template:
     check_val_every_n_epoch: 1
   batches_per_epoch_desired: 200
   model:
-    valid_plot_freq: 100
+    valid_plot_freq: 10
   preprocessing_pkl: ${general.run_dir}/../data/data/preprocessor.pkl
 
 delete_existing_run_dir: False
@@ -29,11 +29,13 @@ do_cwola: False
 do_evaluate_cwola: False
 do_plot_compare: False
 
+data:
+  training_batch_size: 4096
+
 verbose_validation: True
 
 general:
-  name: TRANSITpad1v0
+  name: TRANSITpad2v2503v10
   seed: 12345 # For reproducibility
   run_dir: /transit #workspaces/${general.subfolder}${general.name}
   do_dataset_plots: False
-  

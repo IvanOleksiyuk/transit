@@ -1,0 +1,41 @@
+defaults:
+  - _self_
+  - optimizer: AdamW_lr5-4.yaml
+  - scheduler: cyclic.yaml
+
+network_type: partial_context
+_target_: transit.src.models.transit_model.TRANSIT
+use_m_encodig: True
+encoder_cfg:
+  _target_: transit.mattstools.mattstools.modules_myy_modulated.SingleLayerMultiHeadContextOnlyVBetaNetwork
+  _partial_: true
+  act: silu
+  nrm: none
+  num_heads: 4
+decoder_cfg:
+  _target_: transit.mattstools.mattstools.modules_myy_modulated.SingleLayerMultiHeadContextOnlyVBetaNetwork
+  _partial_: true
+  act: silu
+  nrm: none
+  num_heads: 4
+latent_norm: False
+latent_dim: 6
+
+transport_loss: energy
+energy_cfg:
+  w: 1.0
+  eps: 1.0e-8
+
+loss_cfg:
+  reco:
+    w: 1
+  consistency_x:
+    w: 0.2
+  latent_variance_cfg:
+    w: 0.005
+    pow: 1
+
+valid_plots: ${verbose_validation}
+add_standardizing_layer: True
+reverse_pass_mode: additional_input
+afterglow_epoch: 999999999

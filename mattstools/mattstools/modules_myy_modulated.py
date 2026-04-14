@@ -369,113 +369,15 @@ class SelfModulatedFeatureLayer(nn.Module):
         beta = self.beta_net(x, ctxt)
         return x + v * g + beta
 
-class ContextOnlyVBetaModulatedFeatureLayer(nn.Module):
-    """
-    Dimension-preserving modulation with context-only value and bias:
-        y = x + v(ctxt) * gate(x,ctxt) + beta(ctxt)
-
-    - v and beta depend only on ctxt
-    - gate can still depend on both x and ctxt
-    """
-
-    def __init__(
-        self,
-        d: int,
-        ctxt_dim: int,
-        hidden: int = 32,
-        bias_hidden: int = 16,
-        n_layers: int = 2,
-        act: str = "silu",
-        nrm: str = "none",
-        drp: float = 0.0,
-        gate: str = "sigmoid",
-        gate_uses_ctxt: bool = True,
-        init_zeros: bool = False,
-        use_bias: bool = True,
-    ):
-        super().__init__()
-
-        if ctxt_dim <= 0:
-            raise ValueError("ContextOnlyVBetaModulatedFeatureLayer requires ctxt_dim > 0")
-
-        self.d = d
-        self.ctxt_dim = ctxt_dim
-        self.gate = gate
-        self.gate_uses_ctxt = gate_uses_ctxt
-
-        # Context-only value branch v(ctxt)
-        self.v_net = HalfActivatedMLPBlock(
-            inpt_dim=ctxt_dim,
-            outp_dim=d,
-            hidden_dim=hidden,
-            ctxt_dim=0,
-            n_layers=n_layers,
-            act=act,
-            nrm=nrm,
-            drp=drp,
-            do_res=False,
-            init_zeros=init_zeros,
-            use_bias=use_bias,
-        )
-
-        # Gate branch gate(x, ctxt)
-        self.q_net = HalfActivatedMLPBlock(
-            inpt_dim=d,
-            outp_dim=d,
-            hidden_dim=hidden,
-            ctxt_dim=ctxt_dim if gate_uses_ctxt else 0,
-            n_layers=n_layers,
-            act=act,
-            nrm=nrm,
-            drp=drp,
-            do_res=False,
-            init_zeros=init_zeros,
-            use_bias=use_bias,
-        )
-
-        # Context-only bias branch beta(ctxt)
-        self.beta_net = HalfActivatedMLPBlock(
-            inpt_dim=ctxt_dim,
-            outp_dim=d,
-            hidden_dim=bias_hidden,
-            ctxt_dim=0,
-            n_layers=n_layers,
-            act=act,
-            nrm=nrm,
-            drp=drp,
-            do_res=False,
-            init_zeros=init_zeros,
-            use_bias=use_bias,
-        )
-
-    def _apply_gate(self, logits: T.Tensor) -> T.Tensor:
-        if self.gate == "sigmoid":
-            return T.sigmoid(logits)
-        if self.gate == "tanh":
-            return T.tanh(logits)
-        if self.gate == "softplus":
-            return T.nn.functional.softplus(logits)
-        raise ValueError(f"Unknown gate type: {self.gate}")
-
-    def forward(self, x: T.Tensor, ctxt: T.Tensor | None = None) -> T.Tensor:
-        if ctxt is None:
-            raise ValueError("ctxt must be provided for ContextOnlyVBetaModulatedFeatureLayer")
-
-        v = self.v_net(ctxt)
-        gate_ctxt = ctxt if self.gate_uses_ctxt else None
-        g = self._apply_gate(self.q_net(x, gate_ctxt))
-        beta = self.beta_net(ctxt)
-        return x + v * g + beta
-
 
 class MultiHeadContextOnlyVBetaModulatedFeatureLayer(nn.Module):
     """
     Multi-head context-only modulation:
-        y = x + sum_h gate_h(ctxt) * value_h(x[,ctxt]) + beta(ctxt)
+                y = x + sum_h gate_h(x[,ctxt]) * value_h(ctxt) + beta(ctxt)
 
-    - All gate heads are produced by one context MLP.
-    - All value heads are produced by another MLP that always uses x and can
-      optionally also use ctxt.
+        - All gate heads are produced by one MLP that always uses x and can
+            optionally also use ctxt.
+        - All value heads are produced by another context-only MLP.
     - The head aggregation uses a dot product over the head axis.
     """
 
@@ -491,7 +393,7 @@ class MultiHeadContextOnlyVBetaModulatedFeatureLayer(nn.Module):
         nrm: str = "none",
         drp: float = 0.0,
         gate: str = "tanh",
-        value_uses_ctxt: bool = True,
+        gate_uses_ctxt: bool = True,
         init_zeros: bool = False,
         use_bias: bool = True,
     ):
@@ -506,7 +408,7 @@ class MultiHeadContextOnlyVBetaModulatedFeatureLayer(nn.Module):
         self.ctxt_dim = ctxt_dim
         self.num_heads = num_heads
         self.gate = gate
-        self.value_uses_ctxt = value_uses_ctxt
+        self.gate_uses_ctxt = gate_uses_ctxt
         self.hidden = hidden
         self.bias_hidden = bias_hidden
 
@@ -514,10 +416,10 @@ class MultiHeadContextOnlyVBetaModulatedFeatureLayer(nn.Module):
         # the head modulation path is disabled and only beta(ctxt) is used.
         if self.num_heads > 0:
             self.gate_net = HalfActivatedMLPBlock(
-                inpt_dim=ctxt_dim,
+                inpt_dim=d,
                 outp_dim=num_heads * d,
                 hidden_dim=hidden,
-                ctxt_dim=0,
+                ctxt_dim=ctxt_dim if self.gate_uses_ctxt else 0,
                 n_layers=n_layers,
                 act=act,
                 nrm=nrm,
@@ -528,10 +430,10 @@ class MultiHeadContextOnlyVBetaModulatedFeatureLayer(nn.Module):
             )
 
             self.value_net = HalfActivatedMLPBlock(
-                inpt_dim=d,
+                inpt_dim=ctxt_dim,
                 outp_dim=num_heads * d,
                 hidden_dim=hidden,
-                ctxt_dim=ctxt_dim if value_uses_ctxt else 0,
+                ctxt_dim=0,
                 n_layers=n_layers,
                 act=act,
                 nrm=nrm,
@@ -575,9 +477,9 @@ class MultiHeadContextOnlyVBetaModulatedFeatureLayer(nn.Module):
             raise ValueError("ctxt must be provided for MultiHeadContextOnlyVBetaModulatedFeatureLayer")
 
         if self.num_heads > 0:
-            gate_logits = self.gate_net(ctxt).view(*ctxt.shape[:-1], self.num_heads, self.d)
-            value_ctxt = ctxt if self.value_uses_ctxt else None
-            values = self.value_net(x, value_ctxt).view(*x.shape[:-1], self.num_heads, self.d)
+            gate_ctxt = ctxt if self.gate_uses_ctxt else None
+            gate_logits = self.gate_net(x, gate_ctxt).view(*x.shape[:-1], self.num_heads, self.d)
+            values = self.value_net(ctxt).view(*ctxt.shape[:-1], self.num_heads, self.d)
 
             gates = self._apply_gate(gate_logits)
             delta = T.einsum("...hd,...hd->...d", gates, values)
@@ -607,7 +509,7 @@ class SingleLayerMultiHeadContextOnlyVBetaNetwork(nn.Module):
         nrm: str = "none",
         drp: float = 0.0,
         gate: str = "tanh",
-        value_uses_ctxt: bool = True,
+        gate_uses_ctxt: bool = True,
         init_zeros: bool = False,
         use_bias: bool = True,
     ):
@@ -634,7 +536,7 @@ class SingleLayerMultiHeadContextOnlyVBetaNetwork(nn.Module):
             nrm=nrm,
             drp=drp,
             gate=gate,
-            value_uses_ctxt=value_uses_ctxt,
+            gate_uses_ctxt=gate_uses_ctxt,
             init_zeros=init_zeros,
             use_bias=use_bias,
         )
@@ -653,6 +555,361 @@ class SingleLayerMultiHeadContextOnlyVBetaNetwork(nn.Module):
 
     def __repr__(self):
         return f"SingleLayerMultiHeadContextOnlyVBetaNetwork({self.inpt_dim}->{self.outp_dim})"
+
+
+class ShakeShakeSingleLayerMultiHeadContextOnlyVBetaNetwork(nn.Module):
+    """A single-layer multi-head network with N-way shake-shake regularization.
+
+    Each branch is one `MultiHeadContextOnlyVBetaModulatedFeatureLayer`.
+    During training, branch outputs are mixed with independent forward/backward
+    random convex coefficients. During evaluation, outputs are averaged.
+    """
+
+    def __init__(
+        self,
+        inpt_dim: int,
+        ctxt_dim: int,
+        outp_dim: int = 0,
+        num_heads: int = 4,
+        num_branches: int = 5,
+        hidden: int = None,
+        bias_hidden: int = 32,
+        n_layers: int = 3,
+        act: str = "silu",
+        nrm: str = "none",
+        drp: float = 0.0,
+        gate: str = "tanh",
+        gate_uses_ctxt: bool = True,
+        init_zeros: bool = False,
+        use_bias: bool = True,
+    ):
+        super().__init__()
+
+        if outp_dim not in (0, inpt_dim):
+            raise ValueError(
+                "ShakeShakeSingleLayerMultiHeadContextOnlyVBetaNetwork enforces outp_dim == inpt_dim. "
+                f"Got inpt_dim={inpt_dim}, outp_dim={outp_dim}."
+            )
+        if num_branches < 1:
+            raise ValueError("num_branches must be >= 1")
+
+        self.inpt_dim = inpt_dim
+        self.outp_dim = inpt_dim
+        self.ctxt_dim = ctxt_dim
+        self.num_branches = num_branches
+
+        self.branches = nn.ModuleList(
+            [
+                MultiHeadContextOnlyVBetaModulatedFeatureLayer(
+                    d=inpt_dim,
+                    ctxt_dim=ctxt_dim,
+                    num_heads=num_heads,
+                    hidden=hidden,
+                    bias_hidden=bias_hidden,
+                    n_layers=n_layers,
+                    act=act,
+                    nrm=nrm,
+                    drp=drp,
+                    gate=gate,
+                    gate_uses_ctxt=gate_uses_ctxt,
+                    init_zeros=init_zeros,
+                    use_bias=use_bias,
+                )
+                for _ in range(num_branches)
+            ]
+        )
+
+    def _shake_shake(self, branch_outputs: list[T.Tensor]) -> T.Tensor:
+        if len(branch_outputs) == 1:
+            return branch_outputs[0]
+
+        if not self.training:
+            return T.stack(branch_outputs, dim=0).mean(dim=0)
+
+        # Per-sample random convex coefficients for forward and backward paths.
+        ref = branch_outputs[0]
+        coeff_shape = [ref.shape[0]] + [1] * (ref.dim() - 1) if ref.dim() > 1 else [1]
+
+        alpha = T.rand((len(branch_outputs), *coeff_shape), device=ref.device, dtype=ref.dtype)
+        alpha = alpha / alpha.sum(dim=0, keepdim=True).clamp_min(1e-12)
+
+        beta = T.rand((len(branch_outputs), *coeff_shape), device=ref.device, dtype=ref.dtype)
+        beta = beta / beta.sum(dim=0, keepdim=True).clamp_min(1e-12)
+
+        forward_mix = sum(alpha[i] * branch_outputs[i] for i in range(len(branch_outputs)))
+        backward_mix = sum(beta[i] * branch_outputs[i] for i in range(len(branch_outputs)))
+
+        # Forward uses alpha-mix, backward uses beta-mix.
+        return backward_mix + (forward_mix - backward_mix).detach()
+
+    def forward(self, inputs: T.Tensor, ctxt: T.Tensor | None = None) -> T.Tensor:
+        if ctxt is None:
+            raise ValueError("ctxt must be provided for ShakeShakeSingleLayerMultiHeadContextOnlyVBetaNetwork")
+
+        # Broadcast ctxt like the other network wrappers when rank differs.
+        dim_diff = inputs.dim() - ctxt.dim()
+        if dim_diff > 0:
+            ctxt = ctxt.view(ctxt.shape[0], *dim_diff * (1,), *ctxt.shape[1:])
+            ctxt = ctxt.expand(*inputs.shape[:-1], -1)
+
+        branch_outputs = [branch(inputs, ctxt) for branch in self.branches]
+        return self._shake_shake(branch_outputs)
+
+    def __repr__(self):
+        return (
+            "ShakeShakeSingleLayerMultiHeadContextOnlyVBetaNetwork("
+            f"{self.inpt_dim}->{self.outp_dim}, branches={self.num_branches})"
+        )
+
+
+class SharedWeightShakeShakeSingleLayerMultiHeadContextOnlyVBetaNetwork(
+    ShakeShakeSingleLayerMultiHeadContextOnlyVBetaNetwork
+):
+    """Same as shake-shake single-layer multi-head net, but with shared fwd/bwd weights.
+
+    During training, one random convex coefficient vector is sampled per batch
+    item and used identically in forward and backward. During eval, outputs are
+    averaged over branches.
+    """
+
+    def _shake_shake(self, branch_outputs: list[T.Tensor]) -> T.Tensor:
+        if len(branch_outputs) == 1:
+            return branch_outputs[0]
+
+        if not self.training:
+            return T.stack(branch_outputs, dim=0).mean(dim=0)
+
+        ref = branch_outputs[0]
+        coeff_shape = [ref.shape[0]] + [1] * (ref.dim() - 1) if ref.dim() > 1 else [1]
+
+        coeff = T.rand((len(branch_outputs), *coeff_shape), device=ref.device, dtype=ref.dtype)
+        coeff = coeff / coeff.sum(dim=0, keepdim=True).clamp_min(1e-12)
+
+        # Same coefficients are used for both forward and backward passes.
+        return sum(coeff[i] * branch_outputs[i] for i in range(len(branch_outputs)))
+
+
+class _HalfActivatedMLPBranch(nn.Module):
+    """One branch used inside shake-shake half-activated MLP networks."""
+
+    def __init__(
+        self,
+        inpt_dim: int,
+        outp_dim: int,
+        ctxt_dim: int,
+        hddn_dim: list[int],
+        n_lyr_pbk: int,
+        act_h: str,
+        act_o: str,
+        do_out: bool,
+        nrm: str,
+        drp: float,
+        nrm_inside: bool,
+        drp_on_output: bool,
+        nrm_on_output: bool,
+        do_res: bool,
+        ctxt_in_inpt: bool,
+        ctxt_in_hddn: bool,
+        ctxt_in_out: bool,
+        init_zeros: bool,
+        do_bayesian: bool,
+        use_bias: bool,
+        apply_act_o_on_last_layer: bool = False,
+    ) -> None:
+        super().__init__()
+
+        self.do_out = do_out
+
+        self.input_block = HalfActivatedMLPBlock(
+            inpt_dim=inpt_dim,
+            outp_dim=hddn_dim[0],
+            ctxt_dim=ctxt_dim if ctxt_in_inpt else 0,
+            n_layers=1,
+            act=act_h,
+            nrm=nrm if nrm_inside else "none",
+            drp=drp,
+            do_bayesian=do_bayesian,
+            use_bias=use_bias,
+        )
+
+        self.hidden_blocks = nn.ModuleList()
+        if len(hddn_dim) > 1:
+            for h_1, h_2 in zip(hddn_dim[:-1], hddn_dim[1:]):
+                self.hidden_blocks.append(
+                    HalfActivatedMLPBlock(
+                        inpt_dim=h_1,
+                        outp_dim=h_2,
+                        ctxt_dim=ctxt_dim if ctxt_in_hddn else 0,
+                        n_layers=n_lyr_pbk,
+                        act=act_h,
+                        nrm=nrm if nrm_inside else "none",
+                        drp=drp,
+                        do_res=do_res,
+                        init_zeros=init_zeros,
+                        do_bayesian=do_bayesian,
+                        use_bias=use_bias,
+                    )
+                )
+
+        if self.do_out:
+            self.output_block = HalfActivatedMLPBlock(
+                inpt_dim=hddn_dim[-1],
+                outp_dim=outp_dim,
+                ctxt_dim=ctxt_dim if ctxt_in_out else 0,
+                n_layers=1,
+                act=act_o,
+                do_bayesian=do_bayesian,
+                init_zeros=init_zeros,
+                nrm=nrm if nrm_on_output else "none",
+                drp=drp if drp_on_output else 0,
+                use_bias=use_bias,
+                apply_act_on_last_layer=apply_act_o_on_last_layer,
+            )
+
+    def forward(self, x: T.Tensor, ctxt: T.Tensor | None = None) -> T.Tensor:
+        x = self.input_block(x, ctxt)
+        for h_block in self.hidden_blocks:
+            x = h_block(x, ctxt)
+        if self.do_out:
+            x = self.output_block(x, ctxt)
+        return x
+
+
+class ShakeShakeHalfActivatedMLP(nn.Module):
+    """Half-activated MLP with shake-shake regularization across branches.
+
+    This class is designed as a drop-in discriminator replacement for
+    `transit.mltools.mlp.MLP` configs while using `HalfActivatedMLPBlock`
+    internals and N-way shake-shake branch mixing.
+    """
+
+    def __init__(
+        self,
+        inpt_dim: int,
+        outp_dim: int = 0,
+        ctxt_dim: int = 0,
+        hddn_dim: int | list = 32,
+        num_blocks: int = 1,
+        n_lyr_pbk: int = 1,
+        act_h: str = "silu",
+        act_o: str = "sigmoid",
+        do_out: bool = True,
+        nrm: str = "none",
+        drp: float = 0,
+        nrm_inside: bool = True,
+        drp_on_output: bool = False,
+        nrm_on_output: bool = False,
+        do_res: bool = False,
+        ctxt_in_inpt: bool = True,
+        ctxt_in_hddn: bool = False,
+        ctxt_in_out: bool = False,
+        do_bayesian: bool = False,
+        init_zeros: bool = False,
+        use_bias: bool = True,
+        num_branches: int = 5,
+        shared_forward_backward_weights: bool = True,
+        apply_act_o_on_last_layer: bool = True,
+    ) -> None:
+        super().__init__()
+
+        if ctxt_dim and not (ctxt_in_inpt or ctxt_in_hddn or ctxt_in_out):
+            raise ValueError("Network has context inputs but nowhere to use them!")
+        if num_branches < 1:
+            raise ValueError("num_branches must be >= 1")
+
+        self.inpt_dim = inpt_dim
+        if not isinstance(hddn_dim, int):
+            self.hddn_dim = hddn_dim
+        else:
+            self.hddn_dim = num_blocks * [hddn_dim]
+
+        self.outp_dim = outp_dim or inpt_dim if do_out else self.hddn_dim[-1]
+        self.num_blocks = len(self.hddn_dim)
+        self.ctxt_dim = ctxt_dim
+        self.do_out = do_out
+        self.num_branches = num_branches
+        self.shared_forward_backward_weights = shared_forward_backward_weights
+
+        # nflows compatibility like other MLPs.
+        self.hidden_features = self.hddn_dim[-1]
+
+        self.branches = nn.ModuleList(
+            [
+                _HalfActivatedMLPBranch(
+                    inpt_dim=self.inpt_dim,
+                    outp_dim=self.outp_dim,
+                    ctxt_dim=self.ctxt_dim,
+                    hddn_dim=self.hddn_dim,
+                    n_lyr_pbk=n_lyr_pbk,
+                    act_h=act_h,
+                    act_o=act_o,
+                    do_out=self.do_out,
+                    nrm=nrm,
+                    drp=drp,
+                    nrm_inside=nrm_inside,
+                    drp_on_output=drp_on_output,
+                    nrm_on_output=nrm_on_output,
+                    do_res=do_res,
+                    ctxt_in_inpt=ctxt_in_inpt,
+                    ctxt_in_hddn=ctxt_in_hddn,
+                    ctxt_in_out=ctxt_in_out,
+                    init_zeros=init_zeros,
+                    do_bayesian=do_bayesian,
+                    use_bias=use_bias,
+                    apply_act_o_on_last_layer=apply_act_o_on_last_layer,
+                )
+                for _ in range(self.num_branches)
+            ]
+        )
+
+    def _shake_shake(self, branch_outputs: list[T.Tensor]) -> T.Tensor:
+        if len(branch_outputs) == 1:
+            return branch_outputs[0]
+
+        if not self.training:
+            return T.stack(branch_outputs, dim=0).mean(dim=0)
+
+        ref = branch_outputs[0]
+        coeff_shape = [ref.shape[0]] + [1] * (ref.dim() - 1) if ref.dim() > 1 else [1]
+
+        alpha = T.rand((len(branch_outputs), *coeff_shape), device=ref.device, dtype=ref.dtype)
+        alpha = alpha / alpha.sum(dim=0, keepdim=True).clamp_min(1e-12)
+
+        if self.shared_forward_backward_weights:
+            return sum(alpha[i] * branch_outputs[i] for i in range(len(branch_outputs)))
+
+        beta = T.rand((len(branch_outputs), *coeff_shape), device=ref.device, dtype=ref.dtype)
+        beta = beta / beta.sum(dim=0, keepdim=True).clamp_min(1e-12)
+
+        forward_mix = sum(alpha[i] * branch_outputs[i] for i in range(len(branch_outputs)))
+        backward_mix = sum(beta[i] * branch_outputs[i] for i in range(len(branch_outputs)))
+        return backward_mix + (forward_mix - backward_mix).detach()
+
+    def forward(
+        self,
+        inputs: T.Tensor,
+        ctxt: T.Tensor | None = None,
+        context: T.Tensor | None = None,
+    ) -> T.Tensor:
+        # Use context as a synonym for ctxt (normflow compatibility).
+        if context is not None:
+            ctxt = context
+
+        if ctxt is not None:
+            dim_diff = inputs.dim() - ctxt.dim()
+            if dim_diff > 0:
+                ctxt = ctxt.view(ctxt.shape[0], *dim_diff * (1,), *ctxt.shape[1:])
+                ctxt = ctxt.expand(*inputs.shape[:-1], -1)
+
+        outputs = [branch(inputs, ctxt) for branch in self.branches]
+        return self._shake_shake(outputs)
+
+    def __repr__(self):
+        return (
+            "ShakeShakeHalfActivatedMLP("
+            f"{self.inpt_dim}->{self.outp_dim}, blocks={self.num_blocks}, "
+            f"branches={self.num_branches})"
+        )
 
 
 class ShakeShakeContextOnlyVBetaModulatedFeatureLayer(nn.Module):
@@ -838,7 +1095,6 @@ class ModulatedBlock(nn.Module):
         context_only_vbeta: bool = False,
         use_multi_head_context_only_vbeta: bool = False,
         multi_head_num_heads: int = 4,
-        value_uses_ctxt: bool = True,
         use_shake_shake: bool = False,
         gate_uses_ctxt: bool = True,
         init_zeros_post: bool = False,
@@ -887,7 +1143,7 @@ class ModulatedBlock(nn.Module):
                     nrm=nrm,
                     drp=drp,
                     gate=gate,
-                    value_uses_ctxt=value_uses_ctxt,
+                    gate_uses_ctxt=gate_uses_ctxt,
                     init_zeros=False,
                     use_bias=use_bias,
                 )
@@ -907,9 +1163,10 @@ class ModulatedBlock(nn.Module):
                     use_bias=use_bias,
                 )
             else:
-                self.mod = ContextOnlyVBetaModulatedFeatureLayer(
+                self.mod = MultiHeadContextOnlyVBetaModulatedFeatureLayer(
                     d=outp_dim,
                     ctxt_dim=ctxt_dim,
+                    num_heads=1,
                     hidden=mod_hidden,
                     bias_hidden=mod_bias_hidden,
                     n_layers=mod_n_layers,
@@ -1006,7 +1263,6 @@ class ModulatedNetwork(nn.Module):
         context_only_vbeta: bool = False,
         use_multi_head_context_only_vbeta: bool = False,
         multi_head_num_heads: int = 4,
-        value_uses_ctxt: bool = True,
         use_shake_shake: bool = False,
         gate_uses_ctxt: bool = True,
         # init options
@@ -1081,7 +1337,6 @@ class ModulatedNetwork(nn.Module):
                     context_only_vbeta=context_only_vbeta,
                     use_multi_head_context_only_vbeta=use_multi_head_context_only_vbeta,
                     multi_head_num_heads=multi_head_num_heads,
-                    value_uses_ctxt=value_uses_ctxt,
                     use_shake_shake=use_shake_shake,
                     gate_uses_ctxt=gate_uses_ctxt,
                     init_zeros_post=hddn_init_zeros,

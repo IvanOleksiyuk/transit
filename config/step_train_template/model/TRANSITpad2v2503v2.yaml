@@ -10,13 +10,13 @@ encoder_cfg:
   _target_: transit.mattstools.mattstools.modules_myy_modulated.SingleLayerMultiHeadContextOnlyVBetaNetwork
   _partial_: true
   act: silu
-  value_uses_ctxt: True
+  gate_uses_ctxt: True
   nrm: none
   num_heads: 8
 decoder_cfg:
   _target_: transit.mattstools.mattstools.modules_myy_modulated.SingleLayerMultiHeadContextOnlyVBetaNetwork
   _partial_: true
-  value_uses_ctxt: False
+  gate_uses_ctxt: False
   act: silu
   nrm: none
   num_heads: 8
@@ -68,6 +68,9 @@ adversarial_cfg:
       milestones: [30, 100, 150, 175]
       gamma: 0.5
   gradient_clip_val: 0.1
+
+input_noise_cfg:
+  noise_std: 0.3
 
 valid_plots: ${verbose_validation}
 add_standardizing_layer: True

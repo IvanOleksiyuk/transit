@@ -209,7 +209,8 @@ class HalfActivatedMLPBlock(nn.Module):
     - identity on half of the neurons
     - provided activation on the other half
 
-    The final layer is always linear (no activation).
+    The final layer is linear by default. If `apply_act_on_last_layer=True`,
+    the final layer uses the full activation function (not half-activated).
     """
 
     def __init__(
@@ -226,6 +227,7 @@ class HalfActivatedMLPBlock(nn.Module):
         do_bayesian: bool = False,
         init_zeros: bool = False,
         use_bias: bool = True,
+        apply_act_on_last_layer: bool = False,
         scale_output=None,
         scale_residual=None,
     ) -> None:
@@ -260,8 +262,11 @@ class HalfActivatedMLPBlock(nn.Module):
                     self.block[-1].bias.data.fill_(0)
 
             is_final = n == n_layers - 1
-            if (not is_final) and act != "none":
-                self.block.append(_HalfLinearHalfAct(act))
+            if act != "none":
+                if not is_final:
+                    self.block.append(_HalfLinearHalfAct(act))
+                elif apply_act_on_last_layer:
+                    self.block.append(get_act(act))
 
             if nrm != "none" and not with_zeros:
                 self.block.append(get_nrm(nrm, lyr_out))

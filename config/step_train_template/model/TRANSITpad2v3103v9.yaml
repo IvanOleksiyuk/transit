@@ -1,0 +1,31 @@
+defaults:
+  - _self_
+  - optimizer: AdamW_lr2-4.yaml
+  - scheduler: cyclic.yaml
+
+network_type: partial_context
+_target_: transit.src.models.transit_model.TRANSIT
+use_m_encodig: True
+encoder_cfg: 
+  _target_: transit.mattstools.mattstools.modules_myy_modulated.ContextLineHyper
+  _partial_: true
+decoder_cfg:
+  _target_: transit.mattstools.mattstools.modules_myy_modulated.ContextLineHyper
+  _partial_: true
+latent_norm: False
+latent_dim: 6
+loss_cfg:
+  reco:
+    w: 1
+  consistency_x:
+    w: 0.2
+  latent_ed_gaussian:
+    w: 0.1
+    eps: 1e-10
+
+adversarial_cfg: null
+
+valid_plots: ${verbose_validation}
+add_standardizing_layer: True
+reverse_pass_mode: additional_input
+afterglow_epoch: 999999999

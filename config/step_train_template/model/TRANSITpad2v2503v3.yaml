@@ -11,13 +11,13 @@ encoder_cfg:
   _partial_: true
   act: silu
   nrm: none
-  num_heads: 0
+  num_heads: 4
 decoder_cfg:
   _target_: transit.mattstools.mattstools.modules_myy_modulated.SingleLayerMultiHeadContextOnlyVBetaNetwork
   _partial_: true
   act: silu
   nrm: none
-  num_heads: 0
+  num_heads: 4
 latent_norm: False
 latent_dim: 6
 loss_cfg:

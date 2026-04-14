@@ -57,6 +57,11 @@ def main(cfg: DictConfig) -> None:
         e1s.append(model.get_latent(batch[0].to(device), batch[1].to(device)).detach().cpu())
     vars = [f"e1_{i}" for i in range(e1s[0].shape[1])]
     dataset_dict = {var: T.hstack([o[:, i] for o in e1s]).numpy() for i, var in enumerate(vars)}
+    if cfg.get("latent_export_add_noise", False):
+        noise_level = cfg.get("noise_level", 0.1)
+        log.info("Adding noise to latent space")
+        for var in vars:
+            dataset_dict[var] += np.random.normal(0, noise_level, size=dataset_dict[var].shape)
     log.info("Saving outputs")
     output_dir = Path(orig_cfg.paths.full_path, "outputs")
     output_dir.mkdir(parents=True, exist_ok=True)

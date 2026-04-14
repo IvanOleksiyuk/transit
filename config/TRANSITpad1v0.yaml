@@ -13,6 +13,8 @@ step_train_template:
   do_scale_epochs: True
   trainer:
     check_val_every_n_epoch: 1
+  model:
+    valid_plot_freq: 100
   preprocessing_pkl: ${general.run_dir}/../data/data/preprocessor.pkl
 
 delete_existing_run_dir: False
@@ -26,7 +28,7 @@ do_cwola: False
 do_evaluate_cwola: False
 do_plot_compare: False
 
-verbose_validation: False
+verbose_validation: True
 
 general:
   name: TRANSITpad1v0

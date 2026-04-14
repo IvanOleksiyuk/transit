@@ -10,14 +10,16 @@ encoder_cfg:
   _target_: transit.mattstools.mattstools.modules_myy_modulated.SingleLayerMultiHeadContextOnlyVBetaNetwork
   _partial_: true
   act: silu
+  gate_uses_ctxt: True
   nrm: none
-  num_heads: 2
+  num_heads: 8
 decoder_cfg:
   _target_: transit.mattstools.mattstools.modules_myy_modulated.SingleLayerMultiHeadContextOnlyVBetaNetwork
   _partial_: true
+  gate_uses_ctxt: False
   act: silu
   nrm: none
-  num_heads: 2
+  num_heads: 8
 latent_norm: False
 latent_dim: 6
 loss_cfg:
@@ -26,7 +28,7 @@ loss_cfg:
   consistency_x:
     w: 0.2
   latent_variance_cfg:
-    w: 0.005
+    w: 0.001
     pow: 1
 
 adversarial_cfg:
@@ -35,11 +37,12 @@ adversarial_cfg:
     _target_: transit.mltools.mlp.MLP
     _partial_: true
     outp_dim: 1
-    hddn_dim: [64, 64, 64, 64]
+    hddn_dim: [64, 64, 64]
     ctxt_in_hddn: True
     ctxt_in_inpt: True
     act_h: "silu"
     act_o: "sigmoid"
+    drp: 0.1
   optimizer_main: default.yaml
   optimizer_d: default.yaml
   warmup: 5
@@ -66,6 +69,9 @@ adversarial_cfg:
       milestones: [30, 100, 150, 175]
       gamma: 0.5
   gradient_clip_val: 0.1
+
+input_noise_cfg:
+  noise_std: 0.1
 
 valid_plots: ${verbose_validation}
 add_standardizing_layer: True

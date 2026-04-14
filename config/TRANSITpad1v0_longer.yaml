@@ -13,7 +13,7 @@ step_train_template:
   do_scale_epochs: True
   trainer:
     check_val_every_n_epoch: 1
-  batches_per_epoch_desired: 200
+  batches_per_epoch_desired: 400
   model:
     valid_plot_freq: 100
   preprocessing_pkl: ${general.run_dir}/../data/data/preprocessor.pkl
