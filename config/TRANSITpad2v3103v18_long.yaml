@@ -1,0 +1,42 @@
+# @package _global_
+
+defaults:
+  - data: PAD_DEFAULT_flatmass
+  - step_train_template: transitv_0v2
+  - step_export_template: transit
+  - step_evaluate: transit_PAD
+  - override /step_train_template/model: TRANSITpad2v3103v18.yaml
+  - _self_
+
+step_train_template:
+  project_name: pad_transit
+  do_scale_epochs: True
+  trainer:
+    check_val_every_n_epoch: 1
+  batches_per_epoch_desired: 200
+  model:
+    valid_plot_freq: 13
+  preprocessing_pkl: ${general.run_dir}/../data/data/preprocessor.pkl
+
+delete_existing_run_dir: False
+
+do_train_template: True
+do_export_template: True
+do_transport_sideband: False
+do_export_latent: False
+do_evaluation: False
+do_cwola: False
+do_evaluate_cwola: False
+do_plot_compare: False
+
+data:
+  training_batch_size: 4096
+
+verbose_validation: True
+
+general:
+  name: TRANSITpad2v3103v18_longer
+  seed: 12345 # For reproducibility
+  run_dir: /transit #workspaces/${general.subfolder}${general.name}
+  do_dataset_plots: False
+  

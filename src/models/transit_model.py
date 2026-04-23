@@ -114,7 +114,8 @@ class TRANSIT(LightningModule):
         valid_plot_freq = 1,
         dequantization_cfg = None,
         true_trajectory_pickle_file = None, # Path to a pickle file containing a function that provides true trajectories
-        do_switch_off_adversary_in_case_of_instability = False
+        do_switch_off_adversary_in_case_of_instability = False,
+        ema_cfg: Mapping | None = None,
         
     ) -> None:
         """
@@ -132,6 +133,24 @@ class TRANSIT(LightningModule):
         self.input_type=input_type
         self.afterglow_epoch = afterglow_epoch
         self.transport_loss_mode = transport_loss
+        if ema_cfg is None:
+            self.ema_cfg = SimpleNamespace()
+        elif isinstance(ema_cfg, Mapping):
+            self.ema_cfg = SimpleNamespace(**dict(ema_cfg))
+        else:
+            self.ema_cfg = ema_cfg
+
+        self.use_ema = bool(self._cfg_get(self.ema_cfg, "enabled", False))
+        self.ema_decay = float(self._cfg_get(self.ema_cfg, "decay", 0.999))
+        self.ema_update_every = max(1, int(self._cfg_get(self.ema_cfg, "update_every", 1)))
+        self.ema_start_step = max(0, int(self._cfg_get(self.ema_cfg, "start_step", 0)))
+        self.ema_use_in_eval = bool(self._cfg_get(self.ema_cfg, "use_in_eval", True))
+        self.ema_include_encoder2 = bool(self._cfg_get(self.ema_cfg, "include_encoder2", True))
+        self._ema_shadow = {}
+        self._ema_backup = None
+        self._ema_num_updates = 0
+        self._ema_eval_active = False
+        self._ema_should_update_this_batch = False
         if mmd_cfg is None:
             self.mmd_cfg = SimpleNamespace()
         elif isinstance(mmd_cfg, Mapping):
@@ -253,7 +272,9 @@ class TRANSIT(LightningModule):
 
         # For more stable checks in the shared step
         expected_attrs = ["reco", 
-                "consistency_x", 
+                "reco_l1",
+                "consistency_x",
+                "consistency_x_l1",
                 "consistency_normalised_x",
                 "consistency_xx", 
                 "consistency_cont", 
@@ -268,7 +289,13 @@ class TRANSIT(LightningModule):
                 "noised_reco",
                 "consistency_noised",
                 "latent_ed_gaussian",
-                "projected_context_ed_gaussian"]
+                "consistency_noise",
+                "projected_context_ed_gaussian",
+                "latent_mean_cfg",
+                "latent_covariance_cfg",
+                "decoder_jacobian_cfg",
+                "parallelity_loss_cfg",
+                "rot_loss_cfg"]
         for attr in list(self.loss_cfg.keys()):
             if attr in expected_attrs:
                 setattr(self.loss_cfg, attr, getattr(self.loss_cfg, attr, None))
@@ -282,6 +309,9 @@ class TRANSIT(LightningModule):
             if not hasattr(self.loss_cfg.DisCO_loss_cfg, "mode"):
                 self.loss_cfg.DisCO_loss_cfg.mode = "e1_vs_e2"
         self.dis_steps_per_gen = 0
+
+        if self.use_ema:
+            self._init_ema_state()
 
     def encode_content(self, x_inp, m_pair, mask=None):
         if not self.use_m_encodig:
@@ -370,6 +400,74 @@ class TRANSIT(LightningModule):
             return tensors if len(tensors) > 1 else tensors[0]
         noisy = [t + torch.randn_like(t) * self.disc_input_noise_std for t in tensors]
         return noisy if len(noisy) > 1 else noisy[0]
+
+    def _ema_named_parameters(self):
+        modules = [("encoder1", self.encoder1), ("decoder", self.decoder)]
+        if self.ema_include_encoder2 and hasattr(self.encoder2, "named_parameters"):
+            modules.append(("encoder2", self.encoder2))
+
+        for module_name, module in modules:
+            if not hasattr(module, "named_parameters"):
+                continue
+            for param_name, param in module.named_parameters():
+                if param.requires_grad:
+                    yield f"{module_name}.{param_name}", param
+
+    def _init_ema_state(self):
+        self._ema_shadow = {
+            name: param.detach().float().cpu().clone()
+            for name, param in self._ema_named_parameters()
+        }
+
+    @torch.no_grad()
+    def _ema_update(self):
+        if not self.use_ema:
+            return
+
+        if not self._ema_shadow:
+            self._init_ema_state()
+
+        one_minus_decay = 1.0 - self.ema_decay
+        for name, param in self._ema_named_parameters():
+            shadow = self._ema_shadow.get(name, None)
+            target_device = shadow.device if shadow is not None else torch.device("cpu")
+            current = param.detach().to(device=target_device, dtype=torch.float32)
+            if name not in self._ema_shadow:
+                self._ema_shadow[name] = current.clone()
+                continue
+            self._ema_shadow[name].mul_(self.ema_decay).add_(current, alpha=one_minus_decay)
+        self._ema_num_updates += 1
+
+    @torch.no_grad()
+    def _ema_apply_eval_weights(self):
+        if not (self.use_ema and self.ema_use_in_eval):
+            return
+        if self._ema_eval_active:
+            return
+        if not self._ema_shadow:
+            return
+
+        self._ema_backup = {}
+        for name, param in self._ema_named_parameters():
+            if name not in self._ema_shadow:
+                continue
+            self._ema_backup[name] = param.detach().clone()
+            param.copy_(self._ema_shadow[name].to(device=param.device, dtype=param.dtype))
+        self._ema_eval_active = True
+
+    @torch.no_grad()
+    def _ema_restore_train_weights(self):
+        if not self._ema_eval_active:
+            return
+        if self._ema_backup is None:
+            self._ema_eval_active = False
+            return
+
+        for name, param in self._ema_named_parameters():
+            if name in self._ema_backup:
+                param.copy_(self._ema_backup[name])
+        self._ema_backup = None
+        self._ema_eval_active = False
 
     def _compute_mmd(self, x_real, m_real, x_fake, m_fake):
         # Product of RBF kernels on features and mass; multi-bandwidth for robustness.
@@ -493,6 +591,85 @@ class TRANSIT(LightningModule):
             mask = None
         return x_inp, mask, m_pair, m_add
 
+    def parralelity_loss(self, encoder, decoder, x_inp, m_pair, eps_scale=1e-2):
+        eps = torch.randn_like(x_inp)
+        eps = eps / (eps.norm(dim=1, keepdim=True) + 1e-8)
+        x_bar = x_inp + eps*eps_scale
+        d_x = (x_bar - x_inp).reshape(x_inp.shape[0], -1)
+        if self.style_injection_cond:
+            z = encoder(x_inp, ctxt=m_pair)
+            z_bar = encoder(x_bar, ctxt=m_pair)
+            m_pair_shuffled = m_pair[torch.randperm(m_pair.shape[0])]
+            x_rec = decoder(z, ctxt=m_pair_shuffled)
+            x_bar_rec = decoder(z_bar, ctxt=m_pair_shuffled)
+        else:
+            z = encoder(torch.cat([x_inp, m_pair], dim=1))
+            z_bar = encoder(torch.cat([x_bar, m_pair], dim=1))
+            x_rec = decoder(z)
+            x_bar_rec = decoder(z_bar)
+        dx_rec = (x_bar_rec - x_rec).reshape(x_inp.shape[0], -1)
+        return (dx_rec-d_x).norm(dim=1).mean()/eps_scale
+
+    def rotationality_loss(self, encoder, decoder, x_inp, m_pair, eps_scale=1e-2):
+        B = x_inp.shape[0]
+
+        u = torch.randn_like(x_inp)
+        u = u / (u.norm(dim=1, keepdim=True) + 1e-8)
+
+        v = torch.randn_like(x_inp)
+        v = v - (u * v).sum(dim=1, keepdim=True) * u
+        v = v / (v.norm(dim=1, keepdim=True) + 1e-8)
+
+        x_u = x_inp + eps_scale * u
+        x_v = x_inp + eps_scale * v
+
+        if self.style_injection_cond:
+            m_pair_shuffled = m_pair[torch.randperm(m_pair.shape[0])]
+
+            z = encoder(x_inp, ctxt=m_pair)
+            z_u = encoder(x_u, ctxt=m_pair)
+            z_v = encoder(x_v, ctxt=m_pair)
+
+            x_rec = decoder(z, ctxt=m_pair_shuffled)
+            x_u_rec = decoder(z_u, ctxt=m_pair_shuffled)
+            x_v_rec = decoder(z_v, ctxt=m_pair_shuffled)
+        else:
+            z = encoder(torch.cat([x_inp, m_pair], dim=1))
+            z_u = encoder(torch.cat([x_u, m_pair], dim=1))
+            z_v = encoder(torch.cat([x_v, m_pair], dim=1))
+
+            x_rec = decoder(z)
+            x_u_rec = decoder(z_u)
+            x_v_rec = decoder(z_v)
+
+        du_rec = (x_u_rec - x_rec).reshape(B, -1)
+        dv_rec = (x_v_rec - x_rec).reshape(B, -1)
+
+        u_flat = u.reshape(B, -1)
+        v_flat = v.reshape(B, -1)
+
+        skew = (u_flat * dv_rec).sum(dim=1) - (v_flat * du_rec).sum(dim=1)
+
+        return (skew.abs() / eps_scale).mean()
+
+
+    def decoder_smoothness_penalty(self, decoder, z, context, eps_scale=1e-2):
+            """
+            Finite-difference approximation of decoder Jacobian norm.
+            z: [B, Dz]
+            """
+            eps = torch.randn_like(z)
+            eps = eps / (eps.norm(dim=1, keepdim=True) + 1e-8)
+            eps = eps * eps_scale
+
+            x1 = decoder(z, context)
+            x2 = decoder(z + eps, context)
+
+            dx = (x2 - x1).reshape(z.shape[0], -1)
+            dz = eps.reshape(z.shape[0], -1)
+
+            return ((dx.norm(dim=1) / (dz.norm(dim=1) + 1e-8)) ** 2).mean()
+
     def _shared_step(self, sample: tuple, _batch_index = None, step_type="none") -> torch.Tensor:
         self.switch_off_adversary_in_case_of_instability = True
         self.log(f"{step_type}_debug/global_step", self.global_step)
@@ -508,6 +685,11 @@ class TRANSIT(LightningModule):
         m_pair=m_pair.reshape([x_inp.shape[0], -1])
         m_add=m_add.reshape([x_inp.shape[0], -1])
         
+        # DELETE THIS, just for debugging to check the mass values are in the right range and not all smaller than 0.5 for example
+        self.log(f"{step_type}_debug/batch_size", batch_size)
+        self.log(f"{step_type}_debug/m_pair_larger0.5", ( (m_pair>0.5).sum()/m_pair.numel() ).item())
+        self.log(f"{step_type}_debug/m_add_larger0.5", ( (m_add>0.5).sum()/m_add.numel() ).item())
+
         if self.do_dequantization:
             x_inp = self.dequantization_layer(x_inp)
         
@@ -564,6 +746,15 @@ class TRANSIT(LightningModule):
             loss_reco = mse_loss(recon, x_inp).mean()
         total_loss += loss_reco*self.loss_cfg.reco.w
         self.log(f"{step_type}/loss_reco", loss_reco)
+
+        # Reco L1
+        if self.loss_cfg.reco_l1 is not None:
+            if self.use_m_encodig and self.decoder_out_m:
+                loss_reco_l1 = F.l1_loss(recon, torch.cat([x_inp, m_pair], dim=1)).mean()
+            else:
+                loss_reco_l1 = F.l1_loss(recon, x_inp).mean()
+            total_loss += loss_reco_l1*self.loss_cfg.reco_l1.w
+            self.log(f"{step_type}/loss_reco_l1", loss_reco_l1)
 
         if self.do_switch_off_adversary_in_case_of_instability:
             if loss_reco > 0.0001:
@@ -627,6 +818,48 @@ class TRANSIT(LightningModule):
                 if loss_back_vec > 0.0001:
                     self.switch_off_adversary_in_case_of_instability = True
 
+        if self.loss_cfg.decoder_jacobian_cfg is not None:
+            loss_decoder_jacobian = self.decoder_smoothness_penalty(
+                self.decoder,
+                content,
+                context=style,
+                eps_scale=self.loss_cfg.decoder_jacobian_cfg.eps_scale,
+            )
+
+            if self.loss_cfg.decoder_jacobian_cfg.w is not None:
+                total_loss += loss_decoder_jacobian * self.loss_cfg.decoder_jacobian_cfg.w
+
+            self.log(f"{step_type}/decoder_jacobian_regularization", loss_decoder_jacobian)
+
+        if self.loss_cfg.parallelity_loss_cfg is not None:
+            loss_parallelity = self.parralelity_loss(self.encoder1, self.decoder, x_inp, m_pair, eps_scale=self.loss_cfg.parallelity_loss_cfg.eps_scale)
+
+            if self.loss_cfg.parallelity_loss_cfg.w is not None:
+                total_loss += loss_parallelity * self.loss_cfg.parallelity_loss_cfg.w
+
+            self.log(f"{step_type}/parallelity_loss", loss_parallelity)
+
+        if self.loss_cfg.rot_loss_cfg is not None:
+            loss_rotationality = self.rotationality_loss(self.encoder1, self.decoder, x_inp, m_pair, eps_scale=self.loss_cfg.rot_loss_cfg.eps_scale)
+
+            if self.loss_cfg.rot_loss_cfg.w is not None:
+                total_loss += loss_rotationality * self.loss_cfg.rot_loss_cfg.w
+
+            self.log(f"{step_type}/rotationality_loss", loss_rotationality)
+
+        #Consistency L1
+        if self.loss_cfg.consistency_x_l1 is not None:
+            loss_back_vec_l1 = F.l1_loss(content, content_n).mean()
+            self.log(f"{step_type}/loss_back_vec_l1", loss_back_vec_l1)
+            if self.loss_cfg.consistency_x_l1.w is not None:
+                if isinstance(self.loss_cfg.consistency_x_l1.w, float) or isinstance(self.loss_cfg.consistency_x_l1.w, int):
+                    total_loss += loss_back_vec_l1*self.loss_cfg.consistency_x_l1.w
+                else:
+                    total_loss += loss_back_vec_l1*self.loss_cfg.consistency_x_l1.w(self.global_step)
+            if self.do_switch_off_adversary_in_case_of_instability:
+                if loss_back_vec_l1 > 0.0001:
+                    self.switch_off_adversary_in_case_of_instability = True
+
         # Consistency losses 
         if self.loss_cfg.consistency_normalised_x is not None:
             var = content.var(dim=0, unbiased=False, keepdim=True).detach()
@@ -672,6 +905,20 @@ class TRANSIT(LightningModule):
                 else:
                     total_loss += loss_back_vec_noised*self.loss_cfg.consistency_noised.w(self.global_step)
 
+        # Gaussian consistency loss in the latent space
+        if self.loss_cfg.consistency_noise is not None:
+            content_noise = torch.randn_like(content)
+            recon_noise = self.decode(content_noise, style_p)
+            content_noise_n = self.encode_content(recon_noise, m_n, mask=mask)
+            loss_back_vec_noise = mse_loss(content_noise, content_noise_n).mean()
+            self.log(f"{step_type}/loss_back_vec_noise", loss_back_vec_noise)
+            if self.loss_cfg.consistency_noise.w is not None:
+                if isinstance(self.loss_cfg.consistency_noise.w, float) or isinstance(self.loss_cfg.consistency_noise.w, int):
+                    total_loss += loss_back_vec_noise*self.loss_cfg.consistency_noise.w
+                else:
+                    total_loss += loss_back_vec_noise*self.loss_cfg.consistency_noise.w(self.global_step)
+
+
         self.log(f"{step_type}/switch_off_adversary_in_case_of_instability", int(self.switch_off_adversary_in_case_of_instability))
 
         if self.loss_cfg.consistency_cont is not None:
@@ -707,13 +954,34 @@ class TRANSIT(LightningModule):
                 else:
                     total_loss += loss_ed_gaussian*self.loss_cfg.latent_ed_gaussian.w(self.global_step)
 
-        # variance loss
+        # latent variance loss
         if self.loss_cfg.latent_variance_cfg is not None:
             var = content.var(dim=0)
             loss_latent_variance = torch.mean(torch.abs(1 - var)**self.loss_cfg.latent_variance_cfg.pow)# + torch.mean(torch.square(1 - std_e2)**self.loss_cfg.latent_variance_cfg.pow) / 2
             if self.loss_cfg.latent_variance_cfg.w is not None:
                 total_loss += loss_latent_variance*self.loss_cfg.latent_variance_cfg.w
             self.log(f"{step_type}/variance_regularization", loss_latent_variance)
+
+        # latent covariance loss
+        if self.loss_cfg.latent_covariance_cfg is not None:
+            z = content - content.mean(dim=0, keepdim=True)   # [B, D]
+            cov = (z.T @ z) / (z.shape[0] - 1)                # [D, D]
+
+            off_diag = cov - torch.diag(torch.diag(cov))
+            loss_latent_covariance = torch.mean(torch.abs(off_diag)**self.loss_cfg.latent_covariance_cfg.pow)
+
+            if self.loss_cfg.latent_covariance_cfg.w is not None:
+                total_loss += loss_latent_covariance * self.loss_cfg.latent_covariance_cfg.w
+
+            self.log(f"{step_type}/covariance_regularization", loss_latent_covariance)
+
+        # Mean loss
+        if self.loss_cfg.latent_mean_cfg is not None:
+            mean = content.mean(dim=0)
+            loss_latent_mean = torch.mean(mean**2)
+            if self.loss_cfg.latent_mean_cfg.w is not None:
+                total_loss += loss_latent_mean*self.loss_cfg.latent_mean_cfg.w
+            self.log(f"{step_type}/mean_regularization", loss_latent_mean)
 
         # L1 regularization
         if self.loss_cfg.l1_reg is not None:
@@ -849,6 +1117,7 @@ class TRANSIT(LightningModule):
             raise ValueError(f"Unknown loss function: {self.adversarial_cfg.loss_function}")
 
     def training_step(self, sample: tuple, batch_idx: int) -> torch.Tensor:
+        self._ema_should_update_this_batch = False
 
         if isinstance(self.adversarial, str) and "double_discriminator" in self.adversarial: 
             if self.use_disc_lat and self.use_disc_reco:
@@ -972,11 +1241,13 @@ class TRANSIT(LightningModule):
                 self.clip_gradients(optimizer_g, gradient_clip_val=self.gradient_clip_val)
                 optimizer_g.step()
                 self.untoggle_optimizer(optimizer_g)
+                self._ema_should_update_this_batch = True
                 self.log("dis_steps_per_gen", self.dis_steps_per_gen)
                 self.dis_steps_per_gen = 0
         elif self.adversarial:
             assert False, "Adversarial mode not implemented"
         else:	
+            self._ema_should_update_this_batch = True
             total_loss = self._shared_step(sample, step_type="train", _batch_index=batch_idx)
             return total_loss
 
@@ -1214,6 +1485,50 @@ class TRANSIT(LightningModule):
         if wandb.run is not None:
             for step_type in ["train", "valid"]:
                 wandb.define_metric(f"{step_type}/total_loss", summary="min")
+
+    def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
+        if not self.use_ema:
+            return
+        if not self._ema_should_update_this_batch:
+            return
+        if self.global_step < self.ema_start_step:
+            return
+        if (self.global_step - self.ema_start_step) % self.ema_update_every != 0:
+            return
+        self._ema_update()
+
+    def on_validation_epoch_start(self) -> None:
+        self._ema_apply_eval_weights()
+
+    def on_validation_epoch_end(self) -> None:
+        self._ema_restore_train_weights()
+
+    def on_test_epoch_start(self) -> None:
+        self._ema_apply_eval_weights()
+
+    def on_test_epoch_end(self) -> None:
+        self._ema_restore_train_weights()
+
+    def on_predict_start(self) -> None:
+        self._ema_apply_eval_weights()
+
+    def on_predict_end(self) -> None:
+        self._ema_restore_train_weights()
+
+    def on_save_checkpoint(self, checkpoint) -> None:
+        if not self.use_ema:
+            return
+        checkpoint["ema_state"] = {
+            "shadow": self._ema_shadow,
+            "num_updates": self._ema_num_updates,
+        }
+
+    def on_load_checkpoint(self, checkpoint) -> None:
+        if "ema_state" not in checkpoint:
+            return
+        ema_state = checkpoint["ema_state"]
+        self._ema_shadow = ema_state.get("shadow", {})
+        self._ema_num_updates = int(ema_state.get("num_updates", 0))
 
     def configure_optimizers(self) -> dict:
         """Configure the optimisers and learning rate sheduler for this
