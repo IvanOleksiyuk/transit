@@ -192,6 +192,8 @@ class TRANSIT(LightningModule):
                 self.gradient_clip_val = 5
             else:
                 self.gradient_clip_val = adversarial_cfg.gradient_clip_val
+            if not hasattr(adversarial_cfg, "label_smoothing_eps"):
+                setattr(adversarial_cfg, "label_smoothing_eps", 0)
         else:
             self.adversarial = False
             self.disc_input_noise_std = 0.0
@@ -1134,7 +1136,10 @@ class TRANSIT(LightningModule):
             rpm = torch.randperm(batch_size)
             w2_perm = w2.clone()
             w2_perm = w2_perm[rpm]
-            labels = torch.cat([torch.ones(batch_size), torch.zeros(batch_size)]).type_as(w2_perm)
+            if self.adversarial_cfg.label_smoothing_eps>0:
+                labels = torch.cat([torch.ones(batch_size) - self.adversarial_cfg.label_smoothing_eps, torch.zeros(batch_size) + self.adversarial_cfg.label_smoothing_eps]).type_as(w2_perm)
+            else:
+                labels = torch.cat([torch.ones(batch_size), torch.zeros(batch_size)]).type_as(w2_perm)
             e1_copy = e1.clone()
             generated = self.decode(e1, e2[rpm])
             if self.adversarial_cfg.loss_function in ["binary_cross_entropy", "binary_cross_entropy_with_logits"]:
