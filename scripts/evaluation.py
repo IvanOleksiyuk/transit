@@ -46,7 +46,15 @@ def equalise_to_min_len(arr1, arr2, max=None, shuffle=True):
         min_len = min(min_len, max)
     return arr1[:min_len], arr2[:min_len]
 
-
+def plot_matrix(matrix, title, vmin=-1, vmax=1, abs=False):
+    fig, ax = plt.subplots(figsize=(8, 8))
+    if abs:
+        im = ax.imshow(np.abs(matrix), vmin=0, vmax=vmax, cmap="Blues")
+    else:
+        im = ax.imshow(matrix, vmin=vmin, vmax=vmax, cmap="RdBu")
+    ax.set_title(title)
+    fig.colorbar(im, ax=ax)
+    return fig, ax
 
 def _fmt_auc(val):
     """Format AUC value to 3 decimal places for display on plots/logs.
@@ -115,20 +123,29 @@ def reload_original_config(cfg: OmegaConf, get_best: bool = False) -> OmegaConf:
     version_base=None, config_path=str('../conf'), config_name="evaluate"
 )
 def main(cfg):
-    log.info("Starting evaluation")
+    print("\n")
+    print("!"*80)
+    print("!"*80)
+    log.info("Starting TRANSIT evaluation")
+    print("!"*80)
+    print("!"*80)
     results = {}
     # Get two dataframes to compare
     Path(cfg.general.run_dir+"/plots/").mkdir(parents=True, exist_ok=True) 
     
+    # Try to resume the wandb run if possible, so that the evaluation metrics are logged in the same run as training
     try:
         with open(cfg.general.run_dir+"/template/wandb_id.txt", "r") as f:
             run_id = f.read().strip()
         wandb.init(id=run_id, resume="allow")
+        log.info(f"Resumed wandb run with id {run_id}")
     except:
-        print("Could not resume wandb run")
+        log.warning("Could not resume wandb run")
     
-    # Plot the transport from SB1 to SB2
+    # Load all the data required
     data = {} # a dictionary to store the data
+
+    log.info(">>> Starting to load data for evaluation")
     for key in cfg.step_evaluate.data:
         if "file" in key:
             hdf_file = cfg.step_evaluate.data[key]
@@ -159,9 +176,10 @@ def main(cfg):
             if cfg.step_evaluate.data[key]["_target_"]=="src.data.data.InMemoryDataFrameDict":
                 data[key] = data[key].data["data"]
             log.info(f"Loaded data {key} with n={len(data[key])}, and vars {data[key].columns.tolist()}")    
-    log.info("Data loaded")
+    
     
     variables = data["original_data"].columns.tolist()
+    log.info("<<< Finished loading data for evaluation")
 
     # Use a classifier test to evaluate the difference true and transported samples
     
@@ -510,15 +528,7 @@ def main(cfg):
         evaluate_model(cfg, data["original_data"], data["target_data"], data["template_file"])
 
 
-def plot_matrix(matrix, title, vmin=-1, vmax=1, abs=False):
-    fig, ax = plt.subplots(figsize=(8, 8))
-    if abs:
-        im = ax.imshow(np.abs(matrix), vmin=0, vmax=vmax, cmap="Blues")
-    else:
-        im = ax.imshow(matrix, vmin=vmin, vmax=vmax, cmap="RdBu")
-    ax.set_title(title)
-    fig.colorbar(im, ax=ax)
-    return fig, ax
+
 
 def evaluate_model(cfg, original_data, target_data, template_data):
 
@@ -538,17 +548,23 @@ def evaluate_model(cfg, original_data, target_data, template_data):
     plot_path= orig_cfg["paths"]["output_dir"]+"/../plots/"
     os.makedirs(plot_path, exist_ok=True)
 
-    log.info("Loading checkpoint")
+    log.info("[evaluate_model] Loading checkpoint")
     #device = "cuda" if torch.cuda.is_available() else "cpu"
     device = "cpu"
     model_class = hydra.utils.get_class(orig_cfg.model._target_)
     model = model_class.load_from_checkpoint(orig_cfg.ckpt_path, map_location=device)
+    print(orig_cfg.ckpt_path)
+    print(orig_cfg.ckpt_path)
+    print(orig_cfg.ckpt_path)
+    print(orig_cfg.ckpt_path)
+    
     #model.to(device)
 
     #log.info("Instantiating original trainer")
     #trainer = hydra.utils.instantiate(orig_cfg.trainer)
 
     # Instantiate the datamodule use a different config for data then for training
+    log.info("[evaluate_model] Loading datamodule")
     datamodule = hydra.utils.instantiate(orig_cfg.data.datamodule)
     if hasattr(datamodule, "setup"):
         datamodule.setup("test")
@@ -557,7 +573,6 @@ def evaluate_model(cfg, original_data, target_data, template_data):
     tra_dataloader = datamodule.train_dataloader()
     torch.manual_seed(0)
     batch1 = next(iter(tra_dataloader))
-    #print("batch1:", batch1)
 
     model.eval() # Set the model to evaluation mode to deactivate dropout layers
     x_inp = batch1[0]
@@ -624,6 +639,7 @@ def evaluate_model(cfg, original_data, target_data, template_data):
         plt.xlabel("e1 @ e2 non-diagonal elements")
         plt.ylabel("mjj1 - mjj2")
         plt.savefig(plot_path+"e1_at_e2_non_diag_vs_mjj1-mjj2.png", bbox_inches="tight")
+        log.info(f"[evaluate_model] Plotted e1@e2 matrix and correlations: "+plot_path+"e1_at_e2_matrix.png, "+plot_path+"e1_at_e2_hist.png, "+plot_path+"e1_at_e2_diag_hist.png, "+plot_path+"e1_at_e2_diag_vs_mjj.png, "+plot_path+"e1_at_e2_non_diag_vs_mjj1.png, "+plot_path+"e1_at_e2_non_diag_vs_mjj2.png, "+plot_path+"e1_at_e2_non_diag_vs_mjj1-mjj2.png")
 
 
     bins= np.linspace(-3, 3, 30)
@@ -640,6 +656,7 @@ def evaluate_model(cfg, original_data, target_data, template_data):
         plt.xlabel(f"dim{i}_reco")
         plt.legend()
         plt.savefig(plot_path+f"w1_reco_scater_{i}.png", bbox_inches="tight")
+        log.info(f"[evaluate_model] Plotted w1 reconstruction for dim {i}: "+plot_path+f"w1_reco_hist_{i}.png and "+plot_path+f"w1_reco_scater_{i}.png")
     # Plot linear correlateion plots for the latent space
     one_corretation_plot=True
     os.makedirs(plot_path+"corerlations/", exist_ok=True)
@@ -666,6 +683,7 @@ def evaluate_model(cfg, original_data, target_data, template_data):
                 axes[i].set_ylabel(f"mjj")
             plt.tight_layout()
             plt.savefig(plot_path+"corerlations/"+"latent_space_e1_mass_correlations.png", bbox_inches="tight")
+            log.info("[evaluate_model] Plotted latent space e1 mass correlations: "+plot_path+"corerlations/"+"latent_space_e1_mass_correlations.png")
 
 
     # Compute some numerical metrics as a summary about model performance
@@ -678,11 +696,11 @@ def evaluate_model(cfg, original_data, target_data, template_data):
     results["dcor_torch"] = dcor_torch(e1, e2) if dcor else None
 
     # Do some fast calassification
-    if getattr(cfg.step_evaluate.procedures, "lazy_predict", True):
+    if getattr(cfg.step_evaluate.procedures, "lazy_predict", False):
         from lazypredict.Supervised import LazyClassifier
-        print("starting lazy perdict block")
-        print(len(target_data))
-        print(len(template_data))
+        log.info("starting lazy perdict block")
+        log.info(f"Length of target_data: {len(target_data)}")
+        log.info(f"Length of template_data: {len(template_data)}")
         use_n=min(10000, len(target_data), len(template_data))
         X = pd.concat((target_data[:use_n], template_data[:use_n]))
         y = np.concatenate((np.ones(len(target_data[:use_n])), np.zeros(len(template_data[:use_n]))))
@@ -697,24 +715,29 @@ def evaluate_model(cfg, original_data, target_data, template_data):
     with open(plot_path+"results.txt", "w") as f:
         for key, value in results.items():
             f.write(f"{key}: {value}\n")
-    for key, value in results.items():
-        print(key, value)
+    #for key, value in results.items():
+    #    print(key, value)
+
+    
+    # Plot trajectories
     w1 = batch1[0]
     w2 = batch1[1]
-    
-    processor = pickle.load(open(orig_cfg["paths"]["output_dir"]+"/../cathode_preprocessor.pkl", "rb"))
-    for var in range(w1.shape[1]):
-        var_name=var_group_list[0][var]
-        if var_name=="del_R":
-            var_name="$\Delta R$"
-        if var_name=="del_m":
-            var_name="$\Delta m [GeV]$"
-        _draw_event_transport_trajectories(model, plot_path, w1, w2, var=var, var_name=var_name, masses=np.linspace(3000, 4600, 1000), max_traj=20, processor=processor)
+    if getattr(cfg.step_evaluate.procedures, "draw_trajectories", True):
+        processor = None #pickle.load(open(orig_cfg["paths"]["output_dir"]+"/../../data/data/preprocessor.pkl", "rb"))
+        for var in range(w1.shape[1]):
+            var_name=var_group_list[0][var]
+            if var_name=="del_R":
+                var_name="$\Delta R$"
+            if var_name=="del_m":
+                var_name="$\Delta m [GeV]$"
+            interval_len = max(w2)-min(w2)
+            _draw_event_transport_trajectories(model, plot_path, w1, w2, var=var, var_name=var_name, masses=np.linspace(min(w2)-interval_len*0.1, max(w2)+interval_len*0.1, 100), max_traj=20, processor=processor)
 
 def _draw_event_transport_trajectories(model, plot_path, w1_, m_pair_, var, var_name, masses=np.linspace(-2.5, 2.5, 126), max_traj=20, processor=None):
+    n_features = w1_.shape[1]
     if processor is not None:
         masses_true = copy.deepcopy(masses)
-        tensor = torch.zeros((len(masses), 6))
+        tensor = torch.zeros((len(masses), n_features+1))
         tensor[:, -1]=torch.Tensor(masses)
         masses = processor.transform(tensor)[:, -1].cpu().detach().numpy().flatten()
     else:
@@ -722,9 +745,11 @@ def _draw_event_transport_trajectories(model, plot_path, w1_, m_pair_, var, var_
     w1 = copy.deepcopy(w1_)[:max_traj]
     m_pair = m_pair_[:max_traj]
     if processor is not None:
-        tensor = torch.zeros((len(m_pair), 6))
+        tensor = torch.zeros((len(m_pair), n_features+1))
         tensor[:, -1]=torch.Tensor(m_pair).flatten()
         m_pair_plot = processor.inverse_transform(tensor)[:, -1:]
+    else:
+        m_pair_plot = m_pair
     content = model.encode_content(w1, m_pair)
     recons = []
     if model.adversarial:
@@ -734,7 +759,7 @@ def _draw_event_transport_trajectories(model, plot_path, w1_, m_pair_, var, var_
         style = model.encode_style(w2)
         recon = model.decode(content, style)
         if processor is not None:
-            tensor = torch.zeros((len(recon), 6))
+            tensor = torch.zeros((len(recon), n_features+1))
             tensor[:, :-1]=recon
             recon = processor.inverse_transform(tensor)[:, :-1]
         recons.append(recon)
@@ -766,7 +791,7 @@ def _draw_event_transport_trajectories(model, plot_path, w1_, m_pair_, var, var_
 
     for i in range(max_traj):
         if processor is not None:
-            tensor = torch.zeros((len(w1), 6))
+            tensor = torch.zeros((len(w1), n_features+1))
             tensor[:, :-1]=w1
             w1_plot = processor.inverse_transform(tensor)[:, :-1]
         else:
@@ -776,28 +801,8 @@ def _draw_event_transport_trajectories(model, plot_path, w1_, m_pair_, var, var_
     plt.ylabel(var_name)
     plt.title(f"Event transport for {var_name}")
     plt.savefig(plot_path+f"event_transport_trajectories{var}.png", bbox_inches="tight")
-    
-def draw_event_transport_trajectories_old(model, plot_path, w1, w2, var, var_name, mass_name="m_jj", masses=np.linspace(-4, 4, 801), max_traj=20):
-    recons = []
-    w1 = w1[:max_traj]
-    w2 = w2[:max_traj]
-    e1 = model.encode_content(w1, w2)
-    for m in masses:
-        w2_new = torch.tensor(m).unsqueeze(0).expand(w1.shape[0], 1).float()
-        e2 = model.encode_style(w2_new)
-        recon = model.decode(e1, e2)
-        recons.append(recon)
-    
-    plt.figure()
-    if max_traj is None:
-        max_traj = w1.shape[0]
-    for i in range(max_traj):
-        plt.plot(masses, [float(recon[i, var].detach().numpy()) for recon in recons], "r")
-    for i in range(max_traj):
-        plt.scatter(to_np(w1[:, -1])[:max_traj], to_np(w1[:, var])[:max_traj], marker="x", label="originals", c="green")
-    plt.xlabel(mass_name)
-    plt.ylabel(var_name)
-    plt.savefig(plot_path+f"event_transport_trajectories{var}.png", bbox_inches="tight")
+    log.info(f"Plotted event transport trajectories for {var_name}: "+plot_path+f"event_transport_trajectories{var}.png")
+
 
 def draw_event_transport_trajectories_2d_der(model, plot_path, w1, var, var_name, masses=np.linspace(-4, 4, 801), max_traj=20):
     recons = []
