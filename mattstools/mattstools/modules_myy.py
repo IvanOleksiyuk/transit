@@ -99,6 +99,7 @@ class MLPBlock(nn.Module):
         self.hidden_dim = hidden_dim if hidden_dim is not None else outp_dim
         self.ctxt_dim = ctxt_dim
         self.init_zeros = init_zeros
+        self.scale_residual = scale_residual
 
         # If this layer includes an additive residual connection
         if do_res == "adjust":
@@ -136,6 +137,9 @@ class MLPBlock(nn.Module):
             if scale_output is not None and n == n_layers - 1:
                 self.block.append(Scaling(outp_dim, scale_output))
 
+            if scale_residual and do_res:
+                self.scale_residual_block = Scaling(inpt_dim, init_value=1.0)
+
             # Add the dropout layer
             if drp > 0:
                 self.block.append(nn.Dropout(drp))
@@ -159,13 +163,19 @@ class MLPBlock(nn.Module):
             temp = layer(temp)
 
         # Add the original inputs again for the residual connection
+
+        if self.scale_residual:
+            inpt2 = self.scale_residual_block(inpt)
+        else:
+            inpt2 = inpt
+
         if self.do_res=="adjust":
             if self.inpt_dim < self.outp_dim:
-                temp[:, :self.inpt_dim] += inpt
+                temp[:, :self.inpt_dim] += inpt2
             else:
-                temp += inpt[:, :self.outp_dim]
+                temp += inpt2[:, :self.outp_dim]
         elif self.do_res:
-            temp = temp + inpt
+            temp = temp + inpt2
 
         return temp
 
@@ -345,6 +355,7 @@ class DenseNetwork(nn.Module):
         use_bias: bool = True,
         scale_output_hidden=None,
         unit_in_out_res: bool = False,
+        scale_residual=None,
     ) -> None:
         """Initialise the DenseNetwork.
 
@@ -418,6 +429,7 @@ class DenseNetwork(nn.Module):
         self.ctxt_dim = ctxt_dim
         self.do_out = do_out
         self.unit_in_out_res = unit_in_out_res
+        self.scale_residual = scale_residual 
 
         # Necc for this module to work with the nflows package
         self.hidden_features = self.hddn_dim[-1]
@@ -433,6 +445,7 @@ class DenseNetwork(nn.Module):
             do_bayesian=do_bayesian,
             use_bias=use_bias,
             do_res=do_res,
+            scale_residual=scale_residual
         )
 
         # All hidden blocks as a single module list
@@ -453,7 +466,8 @@ class DenseNetwork(nn.Module):
                         do_bayesian=do_bayesian,
                         use_bias=use_bias,
                         init_zeros=hddn_init_zeros,
-                        scale_output=scale_output_hidden
+                        scale_output=scale_output_hidden,
+                        scale_residual=scale_residual
                     )
                 )
 
@@ -470,6 +484,7 @@ class DenseNetwork(nn.Module):
                 drp=drp if drp_on_output else 0,
                 use_bias=use_bias,
                 do_res=do_res,
+                scale_residual=scale_residual
             )
 
     def forward(self, inputs: T.Tensor, ctxt: T.Tensor | None = None) -> T.Tensor:
