@@ -958,8 +958,14 @@ class TRANSIT(LightningModule):
 
         # latent variance loss
         if self.loss_cfg.latent_variance_cfg is not None:
-            var = content.var(dim=0)
-            loss_latent_variance = torch.mean(torch.abs(1 - var)**self.loss_cfg.latent_variance_cfg.pow)# + torch.mean(torch.square(1 - std_e2)**self.loss_cfg.latent_variance_cfg.pow) / 2
+            content_for_var = content
+            if getattr(self.loss_cfg.latent_variance_cfg, "random_rotation", False):
+                # Random orthogonal matrix via QR decomposition; encourages isotropy
+                D = content.shape[1]
+                Q, _ = torch.linalg.qr(torch.randn(D, D, device=content.device, dtype=content.dtype))
+                content_for_var = content @ Q
+            var = content_for_var.var(dim=0)
+            loss_latent_variance = torch.mean(torch.abs(1 - var)**self.loss_cfg.latent_variance_cfg.pow)
             if self.loss_cfg.latent_variance_cfg.w is not None:
                 total_loss += loss_latent_variance*self.loss_cfg.latent_variance_cfg.w
             self.log(f"{step_type}/variance_regularization", loss_latent_variance)
@@ -1256,7 +1262,7 @@ class TRANSIT(LightningModule):
             total_loss = self._shared_step(sample, step_type="train", _batch_index=batch_idx)
             return total_loss
 
-    def _draw_event_transport_trajectories(self, w1_, m_pair_, var, var_name, masses="auto", max_traj=20, plot_second_derivative=True):
+    def _draw_event_transport_trajectories(self, w1_, m_pair_, var, var_name, masses="auto", max_traj=20, plot_second_derivative=True, return_type="PIL"):
         import gc
         if self.true_trajectory_function is not None and max_traj>10:
             max_traj=10
@@ -1300,8 +1306,6 @@ class TRANSIT(LightningModule):
 
         plt.figure()
 
-
-            
         x = self.std_layer_ctxt.reverse(torch.tensor(masses).to(w1.device)).cpu().numpy().reshape(-1) if self.add_standardizing_layer else masses.cpu().numpy().reshape(-1)
         for i in range(max_traj):
             y = [float(recon[i, var].cpu().numpy()) for recon in recons]
@@ -1376,50 +1380,6 @@ class TRANSIT(LightningModule):
         gc.collect()
         torch.cuda.empty_cache()
         return img, None
-
-    def _draw_event_transport_trajectories_2nd_der(self, w1_, m_pair_, var, var_name, masses=None, max_traj=20):
-        w1 = copy.deepcopy(w1_)[:max_traj]
-        m_pair_ = m_pair_[:max_traj]
-        
-        if masses is None:
-            if self.loss_cfg.second_derivative_smoothness is not None:
-                masses = np.arange(-4, 4, self.loss_cfg.second_derivative_smoothness.step)
-                mode=" with step"
-            else:
-                masses = np.linspace(-4, 4, 81)
-                mode="801"
-        else:
-            mode="custom"
-        recons = []
-        for m in masses:
-            w2 = torch.tensor(m).unsqueeze(0).expand(w1.shape[0], 1).float().to(w1.device)
-            content = self.encode_content(w1, m_pair_)
-            style = self.encode_style(w2)
-            recon = self.decode(content, style)
-            recons.append(recon)
-        
-        plt.figure()
-        if max_traj is None:
-            max_traj = w1.shape[0]
-        for i in range(max_traj):
-            x = masses
-            y = np.array([float(recon[i, var].cpu().detach().numpy()) for recon in recons])
-            plt.plot(x[1:-1], (-2*y[1:-1]+y[:-2]+y[2:])/(x[1]-x[0])**2, "r")
-
-        plt.xlabel("mass")
-        plt.ylabel(f"dim{var}")
-        plt.title(f"Event transport for {var_name}, global step: {self.global_step},"+mode)
-        # Convert to an image and return
-        fig = plt.gcf()
-        fig.tight_layout()
-        fig.canvas.draw()
-        img = PIL.Image.frombytes(
-            "RGB",
-            fig.canvas.get_width_height(),
-            fig.canvas.tostring_rgb(),
-        )
-        plt.close("all")
-        return img
 
     def validation_step (self, sample: tuple, batch_idx: int) -> torch.Tensor:
         if not self.adversarial:
