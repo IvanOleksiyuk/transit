@@ -25,6 +25,7 @@ from transit.src.utils.hsic import HSIC_torch
 from sklearn.model_selection import train_test_split
 import copy
 import wandb
+import jsonpickle
 
 log = logging.getLogger(__name__)
 
@@ -415,7 +416,6 @@ def main(cfg):
 
     jsonpickle_file = Path(cfg.general.run_dir) / "evaluation_results.json"
     with open(jsonpickle_file, "wb") as f:
-        import jsonpickle
         frozen = jsonpickle.encode(results)
         f.write(frozen.encode('utf-8'))
     
@@ -548,21 +548,12 @@ def evaluate_model(cfg, original_data, target_data, template_data):
     plot_path= orig_cfg["paths"]["output_dir"]+"/../plots/"
     os.makedirs(plot_path, exist_ok=True)
 
-    log.info("[evaluate_model] Loading checkpoint")
-    #device = "cuda" if torch.cuda.is_available() else "cpu"
+    # Load the model from the checkpoint
+    log.info("[evaluate_model] Loading checkpoint: " + orig_cfg.ckpt_path)
     device = "cpu"
     model_class = hydra.utils.get_class(orig_cfg.model._target_)
     model = model_class.load_from_checkpoint(orig_cfg.ckpt_path, map_location=device)
-    print(orig_cfg.ckpt_path)
-    print(orig_cfg.ckpt_path)
-    print(orig_cfg.ckpt_path)
-    print(orig_cfg.ckpt_path)
     
-    #model.to(device)
-
-    #log.info("Instantiating original trainer")
-    #trainer = hydra.utils.instantiate(orig_cfg.trainer)
-
     # Instantiate the datamodule use a different config for data then for training
     log.info("[evaluate_model] Loading datamodule")
     datamodule = hydra.utils.instantiate(orig_cfg.data.datamodule)
@@ -589,74 +580,24 @@ def evaluate_model(cfg, original_data, target_data, template_data):
         w1 = x_inp
     else:
         w1 = torch.concatenate((x_inp, w2), dim=1)
-    
-    if e1.shape[1] == e2.shape[1]:
-        matrix = e1 @ e2.T
-
-        plt.figure()
-        plot_matrix(to_np(matrix), "e1 @ e2")
-        plt.savefig(plot_path+"e1_at_e2_matrix.png", bbox_inches="tight")
-        plt.figure()
-        plt.hist(to_np(matrix).flatten(), bins=100)
-        plt.title("One batch latent embedding product <e1, e2>")
-        plt.xlabel("<e1, e2>")
-        plt.savefig(plot_path+"e1_at_e2_hist.png", bbox_inches="tight")
-        plt.figure()
-        plt.title("One batch latent embedding product <e1, e2> only diagonal")
-        plt.xlabel("<e1, e2>")
-        plt.hist(np.diagonal(to_np(matrix)), bins=100)
-        plt.savefig(plot_path+"e1_at_e2_diag_hist.png", bbox_inches="tight")
-
-        # Same mass
-        plt.figure()	
-        plt.scatter(np.diagonal(to_np(matrix)), to_np(m_dn), alpha=scatter_alpha, s=scatter_s)
-        plt.xlabel("e1 @ e2 diagonal elements")
-        plt.ylabel("mjj")
-        plt.savefig(plot_path+"e1_at_e2_diag_vs_mjj.png", bbox_inches="tight")
-
-        # Different mass
-        n = to_np(matrix).shape[0]
-        plt.figure()	
-        diag_mask = np.eye(n, dtype=bool)
-
-        # Invert the mask to get the non-diagonal elements
-        non_diag_mask = np.logical_not(diag_mask)
-        non_diag_elements = to_np(matrix)[non_diag_mask]
-        m_1_non_diag = np.tile(m_dn, (1, n))[non_diag_mask]
-        m_2_non_diag = np.tile(m_dn.T, (n, 1))[non_diag_mask]
-        plt.figure()
-        plt.scatter(non_diag_elements, m_1_non_diag, alpha=scatter_alpha, s=scatter_s)
-        plt.xlabel("e1 @ e2 non-diagonal elements")
-        plt.ylabel("mjj1")
-        plt.savefig(plot_path+"e1_at_e2_non_diag_vs_mjj1.png", bbox_inches="tight")
-        plt.figure()
-        plt.scatter(non_diag_elements, m_2_non_diag, alpha=scatter_alpha, s=scatter_s)
-        plt.xlabel("e1 @ e2 non-diagonal elements")
-        plt.ylabel("mjj2")
-        plt.savefig(plot_path+"e1_at_e2_non_diag_vs_mjj2.png", bbox_inches="tight")
-        plt.figure()
-        plt.scatter(non_diag_elements, m_1_non_diag-m_2_non_diag, alpha=scatter_alpha, s=scatter_s)
-        plt.xlabel("e1 @ e2 non-diagonal elements")
-        plt.ylabel("mjj1 - mjj2")
-        plt.savefig(plot_path+"e1_at_e2_non_diag_vs_mjj1-mjj2.png", bbox_inches="tight")
-        log.info(f"[evaluate_model] Plotted e1@e2 matrix and correlations: "+plot_path+"e1_at_e2_matrix.png, "+plot_path+"e1_at_e2_hist.png, "+plot_path+"e1_at_e2_diag_hist.png, "+plot_path+"e1_at_e2_diag_vs_mjj.png, "+plot_path+"e1_at_e2_non_diag_vs_mjj1.png, "+plot_path+"e1_at_e2_non_diag_vs_mjj2.png, "+plot_path+"e1_at_e2_non_diag_vs_mjj1-mjj2.png")
 
 
     bins= np.linspace(-3, 3, 30)
-    for i in range(w1.shape[1]):
-        plt.figure()
-        plt.hist(to_np(w1[:, i]), bins=bins, histtype='step', label="input")
-        plt.hist(to_np(recon[:, i]), bins=bins, histtype='step', label="reconstruction")
-        plt.xlabel(f"dim{i}")
-        plt.legend()
-        plt.savefig(plot_path+f"w1_reco_hist_{i}.png", bbox_inches="tight")
-        plt.figure()
-        plt.scatter(to_np(w1[:, i]), to_np(recon[:, i]), alpha=scatter_alpha, s=scatter_s)
-        plt.xlabel(f"dim{i}_input")
-        plt.xlabel(f"dim{i}_reco")
-        plt.legend()
-        plt.savefig(plot_path+f"w1_reco_scater_{i}.png", bbox_inches="tight")
-        log.info(f"[evaluate_model] Plotted w1 reconstruction for dim {i}: "+plot_path+f"w1_reco_hist_{i}.png and "+plot_path+f"w1_reco_scater_{i}.png")
+    if getattr(cfg.step_evaluate.procedures, "reconstruction_plots", False):
+        for i in range(w1.shape[1]):
+            plt.figure()
+            plt.hist(to_np(w1[:, i]), bins=bins, histtype='step', label="input")
+            plt.hist(to_np(recon[:, i]), bins=bins, histtype='step', label="reconstruction")
+            plt.xlabel(f"dim{i}")
+            plt.legend()
+            plt.savefig(plot_path+f"w1_reco_hist_{i}.png", bbox_inches="tight")
+            plt.figure()
+            plt.scatter(to_np(w1[:, i]), to_np(recon[:, i]), alpha=scatter_alpha, s=scatter_s)
+            plt.xlabel(f"dim{i}_input")
+            plt.ylabel(f"dim{i}_reco")
+            plt.legend()
+            plt.savefig(plot_path+f"w1_reco_scater_{i}.png", bbox_inches="tight")
+            log.info(f"[evaluate_model] Plotted w1 reconstruction for dim {i}: "+plot_path+f"w1_reco_hist_{i}.png and "+plot_path+f"w1_reco_scater_{i}.png")
     # Plot linear correlateion plots for the latent space
     one_corretation_plot=True
     os.makedirs(plot_path+"corerlations/", exist_ok=True)
@@ -720,10 +661,7 @@ def evaluate_model(cfg, original_data, target_data, template_data):
 
     
     # Plot trajectories
-    w1 = batch1[0]
-    w2 = batch1[1]
     if getattr(cfg.step_evaluate.procedures, "draw_trajectories", True):
-        processor = None #pickle.load(open(orig_cfg["paths"]["output_dir"]+"/../../data/data/preprocessor.pkl", "rb"))
         for var in range(w1.shape[1]):
             var_name=var_group_list[0][var]
             if var_name=="del_R":
@@ -731,98 +669,9 @@ def evaluate_model(cfg, original_data, target_data, template_data):
             if var_name=="del_m":
                 var_name="$\Delta m [GeV]$"
             interval_len = max(w2)-min(w2)
-            _draw_event_transport_trajectories(model, plot_path, w1, w2, var=var, var_name=var_name, masses=np.linspace(min(w2)-interval_len*0.1, max(w2)+interval_len*0.1, 100), max_traj=20, processor=processor)
-
-def _draw_event_transport_trajectories(model, plot_path, w1_, m_pair_, var, var_name, masses=np.linspace(-2.5, 2.5, 126), max_traj=20, processor=None):
-    n_features = w1_.shape[1]
-    if processor is not None:
-        masses_true = copy.deepcopy(masses)
-        tensor = torch.zeros((len(masses), n_features+1))
-        tensor[:, -1]=torch.Tensor(masses)
-        masses = processor.transform(tensor)[:, -1].cpu().detach().numpy().flatten()
-    else:
-        masses_true = masses
-    w1 = copy.deepcopy(w1_)[:max_traj]
-    m_pair = m_pair_[:max_traj]
-    if processor is not None:
-        tensor = torch.zeros((len(m_pair), n_features+1))
-        tensor[:, -1]=torch.Tensor(m_pair).flatten()
-        m_pair_plot = processor.inverse_transform(tensor)[:, -1:]
-    else:
-        m_pair_plot = m_pair
-    content = model.encode_content(w1, m_pair)
-    recons = []
-    if model.adversarial:
-        zs = []
-    for m in masses:
-        w2 = torch.tensor(m).unsqueeze(0).expand(w1.shape[0], 1).float().to(w1.device)
-        style = model.encode_style(w2)
-        recon = model.decode(content, style)
-        if processor is not None:
-            tensor = torch.zeros((len(recon), n_features+1))
-            tensor[:, :-1]=recon
-            recon = processor.inverse_transform(tensor)[:, :-1]
-        recons.append(recon)
-        if model.adversarial:
-            if model.use_disc_lat:
-                zs.append(model.disc_lat(content, style))
-            elif model.use_disc_reco:
-                if hasattr(model, "use_disc_reco_doublecond") and model.use_disc_reco_doublecond:
-                    zs.append(model.disc_reco(w1, torch.cat([w2, m_pair], dim=1)))
-                else:
-                    zs.append(model.disc_reco(w1, w2))
-    if model.adversarial:
-        vmin = min([float(z[:max_traj].min().cpu().detach().numpy()) for z in zs])
-        vmax = max([float(z[:max_traj].max().cpu().detach().numpy()) for z in zs])
-    plt.figure()
-    if max_traj is None:
-        max_traj = x.shape[0]
-    for i in range(max_traj):
-        x=masses_true
-        y = np.array([float(recon[i, var].cpu().detach().numpy()) for recon in recons])
-        if model.adversarial:
-            z = np.array([float(z[i].cpu().detach().numpy()) for z in zs])
-            plt.plot(x, y, "black", zorder=i*2+1)
-            plt.scatter(x, y, c=z, cmap="turbo", s=2, zorder=i*2+2, vmin=vmin, vmax=vmax)
-            if i==0:
-                plt.colorbar()
-        else:
-            plt.plot(x, y, "r")
-
-    for i in range(max_traj):
-        if processor is not None:
-            tensor = torch.zeros((len(w1), n_features+1))
-            tensor[:, :-1]=w1
-            w1_plot = processor.inverse_transform(tensor)[:, :-1]
-        else:
-            w1_plot = w1
-        plt.scatter(to_np(m_pair_plot)[:max_traj], to_np(w1_plot[:, var])[:max_traj],  marker="x", label="originals", c="green")
-    plt.xlabel("$m_{jj} [GeV]$")
-    plt.ylabel(var_name)
-    plt.title(f"Event transport for {var_name}")
-    plt.savefig(plot_path+f"event_transport_trajectories{var}.png", bbox_inches="tight")
-    log.info(f"Plotted event transport trajectories for {var_name}: "+plot_path+f"event_transport_trajectories{var}.png")
-
-
-def draw_event_transport_trajectories_2d_der(model, plot_path, w1, var, var_name, masses=np.linspace(-4, 4, 801), max_traj=20):
-    recons = []
-    for m in masses:
-        w2 = torch.tensor(m).unsqueeze(0).expand(w1.shape[0], 1).float()
-        e1, e2 = model.encode(w1, w2)
-        latent = torch.cat([e1, e2], dim=1)
-        recon = model.decoder(latent)
-        recons.append(recon)
-    
-    plt.figure()
-    if max_traj is None:
-        max_traj = w1.shape[0]
-    for i in range(max_traj):
-        x = masses
-        y = np.array([float(recon[i, var].detach().numpy()) for recon in recons])
-        plt.plot(x, (2*y[1:-1]-y[:-2]+y[2:])/0.01**2, "r")
-    plt.xlabel("mass")
-    plt.ylabel(f"dim{var}")
-    plt.savefig(plot_path+f"event_transport_trajectories_2nd_der{var}.png", bbox_inches="tight")
+            total_loss, e1, e2, w1, w2 = model._shared_step(batch1, step_type="eval", _batch_index=-1)
+            plot = model._draw_event_transport_trajectories(w1, w2, var, var_name, masses="auto", max_traj=20, plot_second_derivative=True, return_type="PIL")
+            plot[0].save(plot_path+f"event_transport_trajectories{var}.png")
 
 def plot_correlation_plots(e1, e2, plot_path, name, c=None, one_corretation_plot=True):
     person_correlations =np.zeros((e1.shape[1], e2.shape[1]))

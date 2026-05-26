@@ -1345,11 +1345,14 @@ class TRANSIT(LightningModule):
         fig = plt.gcf()
         fig.tight_layout()
         fig.canvas.draw()
-        width, height = fig.canvas.get_width_height()
-        buf = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8).reshape(height, width, 4)
-        buf = buf[:, :, [1, 2, 3, 0]]  # ARGB to RGBA
-        img = PIL.Image.fromarray(buf, "RGBA")
-        plt.close("all")
+        if return_type=="PIL":
+            width, height = fig.canvas.get_width_height()
+            buf = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8).reshape(height, width, 4)
+            buf = buf[:, :, [1, 2, 3, 0]]  # ARGB to RGBA
+            img = PIL.Image.fromarray(buf, "RGBA")
+            plt.close("all")
+        else:
+            img = fig
 
         if plot_second_derivative:
             plt.figure()
