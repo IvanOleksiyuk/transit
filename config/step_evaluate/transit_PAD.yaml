@@ -23,7 +23,7 @@ do_2d_hist_instead_of_contour: True
 plot_contour_SB1toSB2transport: True
 bdt_two_sample_test_SBtoSB_transport: True
 bdt_two_sample_test_SBtoSR: True
-plot_everything_else: False
+plot_everything_else: True
 
 classifier_for_test: DEFAULT
 

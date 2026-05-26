@@ -603,7 +603,7 @@ def evaluate_model(cfg, original_data, target_data, template_data):
     os.makedirs(plot_path+"corerlations/", exist_ok=True)
     person_correlations, spearman_correlations, kendalltaus = plot_correlation_plots(e1, e2, plot_path, one_corretation_plot=True, name="latent_space_correlations", c=m_dn)
     
-    if getattr(cfg.step_evaluate.procedures, "mass_correlation_plots", True):
+    if getattr(cfg.step_evaluate.procedures, "mass_correlation_plots", False):
         # Mass correlation plots
         person_correlations_mass = []
         spearman_correlations_mass = []
@@ -659,7 +659,6 @@ def evaluate_model(cfg, original_data, target_data, template_data):
     #for key, value in results.items():
     #    print(key, value)
 
-    
     # Plot trajectories
     if getattr(cfg.step_evaluate.procedures, "draw_trajectories", True):
         for var in range(w1.shape[1]):
@@ -668,7 +667,6 @@ def evaluate_model(cfg, original_data, target_data, template_data):
                 var_name="$\Delta R$"
             if var_name=="del_m":
                 var_name="$\Delta m [GeV]$"
-            interval_len = max(w2)-min(w2)
             total_loss, e1, e2, w1, w2 = model._shared_step(batch1, step_type="eval", _batch_index=-1)
             plot = model._draw_event_transport_trajectories(w1, w2, var, var_name, masses="auto", max_traj=20, plot_second_derivative=True, return_type="PIL")
             plot[0].save(plot_path+f"event_transport_trajectories{var}.png")
