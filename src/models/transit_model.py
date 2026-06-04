@@ -70,14 +70,49 @@ def energy_distance(
     return 2 * cross - intra_p - intra_q
 
 
-class EnergyDistanceLoss(nn.Module):
-    """Energy distance loss between true and generated batches."""
+def projected_energy_distance(
+    p_samples: torch.Tensor,
+    q_samples: torch.Tensor,
+    eps: float = 1e-8,
+) -> torch.Tensor:
+    """Sliced energy distance via a random orthogonal basis.
 
-    def __init__(self, eps: float = 1e-8):
+    Draws a uniformly random orthogonal basis of d vectors (one per feature
+    dimension), projects both sample sets onto each basis vector, computes the
+    1-D energy distance for every direction, and returns the mean.
+    """
+    d = p_samples.shape[1]
+    Q, _ = torch.linalg.qr(
+        torch.randn(d, d, device=p_samples.device, dtype=p_samples.dtype)
+    )  # Q: [d, d], columns are orthonormal
+    p_proj = p_samples @ Q  # [N, d]
+    q_proj = q_samples @ Q  # [N, d]
+    losses = torch.stack([
+        energy_distance(p_proj[:, i : i + 1], q_proj[:, i : i + 1], eps=eps)
+        for i in range(d)
+    ])
+    return losses.mean()
+
+
+class EnergyDistanceLoss(nn.Module):
+    """Energy distance loss between true and generated batches.
+
+    Args:
+        eps: Small constant added inside square roots for numerical stability.
+        mode: ``"canonical"`` uses the full d-dimensional energy distance;
+              ``"projected"`` uses the sliced variant (random orthogonal basis).
+    """
+
+    def __init__(self, eps: float = 1e-8, mode: str = "canonical"):
         super().__init__()
         self.eps = eps
+        if mode not in ("canonical", "projected"):
+            raise ValueError(f"EnergyDistanceLoss mode must be 'canonical' or 'projected', got '{mode}'")
+        self.mode = mode
 
     def forward(self, true_batch: torch.Tensor, generated_batch: torch.Tensor) -> torch.Tensor:
+        if self.mode == "projected":
+            return projected_energy_distance(true_batch, generated_batch, eps=self.eps)
         return energy_distance(true_batch, generated_batch, eps=self.eps)
 
 class TRANSIT(LightningModule):
@@ -166,7 +201,8 @@ class TRANSIT(LightningModule):
             self.energy_cfg = energy_cfg
 
         self.energy_distance_loss = EnergyDistanceLoss(
-            eps=float(self._cfg_get(self.energy_cfg, "eps", 1e-8))
+            eps=float(self._cfg_get(self.energy_cfg, "eps", 1e-12)),
+            mode=str(self._cfg_get(self.energy_cfg, "mode", "canonical")),
         )
 
         if self.transport_loss_mode in ["mmd", "energy"]:
@@ -946,9 +982,13 @@ class TRANSIT(LightningModule):
                     total_loss += loss_back_vec*self.loss_cfg.consistency_xx.w(self.global_step)
 
         if self.loss_cfg.latent_ed_gaussian is not None:
-            # Sample from unit Gaussian
             z = torch.randn_like(content)
-            loss_ed_gaussian = self.energy_distance_loss(content, z)
+            _ed_mode = self._cfg_get(self.loss_cfg.latent_ed_gaussian, "mode", "canonical")
+            _ed_eps = float(self._cfg_get(self.energy_cfg, "eps", 1e-8))
+            if _ed_mode == "projected":
+                loss_ed_gaussian = projected_energy_distance(content, z, eps=_ed_eps)
+            else:
+                loss_ed_gaussian = energy_distance(content, z, eps=_ed_eps)
             self.log(f"{step_type}/loss_ed_gaussian", loss_ed_gaussian)
             if self.loss_cfg.latent_ed_gaussian.w is not None:
                 if isinstance(self.loss_cfg.latent_ed_gaussian.w, float) or isinstance(self.loss_cfg.latent_ed_gaussian.w, int):

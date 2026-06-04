@@ -57,6 +57,59 @@ def plot_matrix(matrix, title, vmin=-1, vmax=1, abs=False):
     fig.colorbar(im, ax=ax)
     return fig, ax
 
+
+def plot_latent_covariance_matrix(arr, label, save_dir):
+    """Plot the covariance matrix of latent variables and the pull from Gaussian expectation.
+
+    Pull is |C_ij - expected_ij| / sigma_ij where:
+      - expected is the identity matrix (N(0,I) assumption)
+      - sigma_ii  = 1/sqrt(2*(N-1))  (std of the sample std-deviation)
+      - sigma_ij  = 1/sqrt(N-1)      (std of the off-diagonal sample covariance)
+    """
+    if hasattr(arr, "to_numpy"):
+        arr = arr.to_numpy()
+    arr = arr.astype(float)
+    N, D = arr.shape
+
+    cov = np.cov(arr, rowvar=False)  # D x D
+
+    expected = np.eye(D)
+
+    sigma_offdiag = 1.0 / np.sqrt(N - 1)
+    sigma_diag = 1.0 / np.sqrt(2 * (N - 1))
+    sigma = np.full((D, D), sigma_offdiag)
+    np.fill_diagonal(sigma, sigma_diag)
+
+    pull = np.abs(cov - expected) / sigma
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+    fig.suptitle(f"Latent covariance — {label}  (N={N})", fontsize=14)
+
+    vmax_cov = max(1.5, np.abs(cov).max())
+    im0 = axes[0].imshow(cov, cmap="RdBu", vmin=-vmax_cov, vmax=vmax_cov)
+    axes[0].set_title("Covariance matrix")
+    axes[0].set_xlabel("latent dim")
+    axes[0].set_ylabel("latent dim")
+    fig.colorbar(im0, ax=axes[0])
+    for i in range(D):
+        for j in range(D):
+            axes[0].text(j, i, f"{cov[i, j]:.2f}", ha="center", va="center", fontsize=7)
+
+    im1 = axes[1].imshow(pull, cmap="Blues", vmin=0)
+    axes[1].set_title("|cov − expected| / σ(element)")
+    axes[1].set_xlabel("latent dim")
+    axes[1].set_ylabel("latent dim")
+    fig.colorbar(im1, ax=axes[1])
+    for i in range(D):
+        for j in range(D):
+            axes[1].text(j, i, f"{pull[i, j]:.3f}", ha="center", va="center", fontsize=7)
+
+    plt.tight_layout()
+    save_path = Path(save_dir) / f"latent_covariance_{label}.png"
+    fig.savefig(save_path, bbox_inches="tight")
+    plt.close(fig)
+    log.info(f"Saved latent covariance plot for {label}: {save_path}")
+
 def _fmt_auc(val):
     """Format AUC value to 3 decimal places for display on plots/logs.
 
@@ -93,7 +146,7 @@ def check_data_loaded(names_list, data):
     missing = []
     for name in names_list:
         if name not in data:
-            return missing.append(name)
+            missing.append(name)
     return missing
 
 @rank_zero_only
@@ -413,6 +466,24 @@ def main(cfg):
                 tag = ["SB1", "SB2 AUC=" + _fmt_auc(results.get("AUCBDTclasstest_SB1toSB2", None))],
                 save_name="SB1_to_SB2")
             log.info(f"Plotted SB1 to SB2 transport: {cfg.general.run_dir}/plots/SB1_to_SB2.png")
+
+    if getattr(cfg.step_evaluate, "plot_latent_covariance", True):
+        log.info("Starting latent covariance matrix plots")
+        latent_regions = {
+            "SB1": "laSB1_file",
+            "SB2": "laSB2_file",
+            "SR":  "laSR_file",
+        }
+        for region_label, data_key in latent_regions.items():
+            if data_key not in data:
+                log.warning(f"Skipping latent covariance plot for {region_label}: key '{data_key}' not in data")
+                continue
+            plot_latent_covariance_matrix(
+                data[data_key],
+                label=region_label,
+                save_dir=Path(cfg.general.run_dir) / "plots/",
+            )
+        log.info("Latent covariance matrix plots done")
 
     jsonpickle_file = Path(cfg.general.run_dir) / "evaluation_results.json"
     with open(jsonpickle_file, "wb") as f:
