@@ -43,10 +43,9 @@ loss_cfg:
     w: 0.5
   consistency_x:
     w: 0.1
-  latent_variance_cfg:
+  latent_variance_proj_cfg:
     w: 0.02
     pow: 1
-    random_rotation: True
   latent_mean_cfg:
     w: 0.02
   latent_ed_gaussian:

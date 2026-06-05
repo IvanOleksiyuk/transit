@@ -317,6 +317,7 @@ class TRANSIT(LightningModule):
                 "consistency_xx", 
                 "consistency_cont", 
                 "latent_variance_cfg", 
+                "latent_variance_proj_cfg",
                 "l1_reg", 
                 "DisCO_loss_cfg", 
                 "pearson_loss_cfg", 
@@ -998,17 +999,22 @@ class TRANSIT(LightningModule):
 
         # latent variance loss
         if self.loss_cfg.latent_variance_cfg is not None:
-            content_for_var = content
-            if getattr(self.loss_cfg.latent_variance_cfg, "random_rotation", False):
-                # Random orthogonal matrix via QR decomposition; encourages isotropy
-                D = content.shape[1]
-                Q, _ = torch.linalg.qr(torch.randn(D, D, device=content.device, dtype=content.dtype))
-                content_for_var = content @ Q
-            var = content_for_var.var(dim=0)
-            loss_latent_variance = torch.mean(torch.abs(1 - var)**self.loss_cfg.latent_variance_cfg.pow)
+            var = content.var(dim=0)
+            loss_latent_variance = torch.mean(torch.abs(1 - var)**self.loss_cfg.latent_variance_cfg.pow)# + torch.mean(torch.square(1 - std_e2)**self.loss_cfg.latent_variance_cfg.pow) / 2
             if self.loss_cfg.latent_variance_cfg.w is not None:
                 total_loss += loss_latent_variance*self.loss_cfg.latent_variance_cfg.w
             self.log(f"{step_type}/variance_regularization", loss_latent_variance)
+
+        if self.loss_cfg.latent_variance_proj_cfg is not None:
+            # Random orthogonal matrix via QR decomposition; encourages isotropy
+            D = content.shape[1]
+            Q, _ = torch.linalg.qr(torch.randn(D, D, device=content.device, dtype=content.dtype))
+            content_for_var = content @ Q
+            var = content_for_var.var(dim=0)
+            latent_variance_proj = torch.mean(torch.abs(1 - var)**self.loss_cfg.latent_variance_proj_cfg.pow)
+            if self.loss_cfg.latent_variance_proj_cfg.w is not None:
+                total_loss += latent_variance_proj*self.loss_cfg.latent_variance_proj_cfg.w
+            self.log(f"{step_type}/variance_regularization", latent_variance_proj)
 
         # latent covariance loss
         if self.loss_cfg.latent_covariance_cfg is not None:
