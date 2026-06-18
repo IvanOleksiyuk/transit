@@ -64,7 +64,8 @@ adversarial_cfg:
     act_o: "sigmoid"
   optimizer_main: default.yaml
   optimizer_d: default.yaml
-  warmup: 0
+  warmup: 0 #Number of warmup epochs
+  warmup_steps: 200 #Number of wamup steps after the end of warmup epochs
   g_loss_weight: 0
   g_loss_gen_weight: 0.2
   every_n_steps_g: 1
