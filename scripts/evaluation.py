@@ -623,7 +623,7 @@ def evaluate_model(cfg, original_data, target_data, template_data):
     log.info("[evaluate_model] Loading checkpoint: " + orig_cfg.ckpt_path)
     device = "cpu"
     model_class = hydra.utils.get_class(orig_cfg.model._target_)
-    model = model_class.load_from_checkpoint(orig_cfg.ckpt_path, map_location=device)
+    model = model_class.load_from_checkpoint(orig_cfg.ckpt_path, map_location=device, weights_only=False)
     
     # Instantiate the datamodule use a different config for data then for training
     log.info("[evaluate_model] Loading datamodule")
