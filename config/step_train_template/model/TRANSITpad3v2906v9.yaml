@@ -1,0 +1,77 @@
+defaults:
+  - _self_
+  - optimizer: AdamW_lr2-4.yaml
+  - scheduler: cyclic.yaml
+
+network_type: partial_context
+_target_: transit.src.models.transit_model.TRANSIT
+use_m_encodig: True
+encoder_cfg:
+  _target_: transit.mattstools.mattstools.modules_myy.DenseNetwork
+  _partial_: true
+  act_h: silu
+  act_i: none
+  nrm: none
+  hddn_dim: 128
+  num_blocks: 4
+  n_lyr_pbk: 3
+  do_res: True
+  scale_residual: True
+  scale_output_hidden: "pm1"
+  ctxt_in_inpt: True
+  ctxt_in_hddn: True
+  ctxt_in_out: False
+decoder_cfg:
+  _target_: transit.mattstools.mattstools.modules_myy.DenseNetwork
+  _partial_: true
+  act_h: silu
+  act_i: none
+  nrm: none
+  hddn_dim: 128
+  num_blocks: 4
+  n_lyr_pbk: 3
+  do_res: True
+  scale_residual: True
+  scale_output_hidden: "pm1"
+  ctxt_in_inpt: True
+  ctxt_in_hddn: True
+  ctxt_in_out: False
+latent_norm: False
+latent_dim: 6
+loss_cfg:
+  reco:
+    w: 1
+  consistency_x:
+    w: 0.2
+  latent_variance_cfg:
+    w: 0.02
+    pow: 1
+    random_rotation: true
+  latent_mean_cfg:
+    w: 0.02
+  # SIGReg (LeJEPA) latent Gaussianisation, replacing the projected latent-ED-gaussian.
+  latent_sigreg_cfg:
+    w: 0.04
+    num_slices: 20
+    t_max: 3.0
+    n_points: 17
+  rot_loss_cfg:
+    w: 0.05
+    eps_scale: 0.01
+
+# No adversarial loss: with adversarial_cfg null the model trains with automatic
+# optimisation and no discriminator (pure auto-encoder + latent regularisers).
+adversarial_cfg: null
+
+ema_cfg:
+  enabled: True
+  decay: 0.98
+  update_every: 1
+
+# No additional input noise.
+input_noise_cfg: null
+
+valid_plots: ${verbose_validation}
+add_standardizing_layer: True
+reverse_pass_mode: additional_input
+afterglow_epoch: 999999999
