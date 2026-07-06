@@ -62,11 +62,17 @@ def energy_distance(
     p_samples: torch.Tensor,
     q_samples: torch.Tensor,
     eps: float = 1e-8,
+    self_distance_correction: bool = False,
 ) -> torch.Tensor:
     """Unbiased-style energy distance estimator between two sample sets."""
     cross = pairwise_distances(p_samples, q_samples, eps=eps).mean()
     intra_p = pairwise_distances(p_samples, p_samples, eps=eps).mean()
     intra_q = pairwise_distances(q_samples, q_samples, eps=eps).mean()
+    if self_distance_correction:
+        n_p = p_samples.shape[0]
+        n_q = q_samples.shape[0]
+        intra_p *= n_p / (n_p - 1)
+        intra_q *= n_q / (n_q - 1)
     return 2 * cross - intra_p - intra_q
 
 
@@ -114,6 +120,58 @@ class EnergyDistanceLoss(nn.Module):
         if self.mode == "projected":
             return projected_energy_distance(true_batch, generated_batch, eps=self.eps)
         return energy_distance(true_batch, generated_batch, eps=self.eps)
+
+
+def _epps_pulley_statistic(proj, t, phi, weights):
+    """Epps-Pulley statistic of 1-D projections against the standard-normal CF.
+
+    proj: (N, K) projected samples, t/phi/weights: (P,) integration grid.
+    Returns (K,) per-slice statistics. Adapted from LeJEPA's EppsPulley:
+    integrates |phi_empirical(t) - exp(-t^2/2)|^2 over t >= 0 (the t < 0 half is
+    folded in via doubled weights) and scales by N. Fully differentiable.
+    """
+    N = proj.shape[-2]
+    x_t = proj.unsqueeze(-1) * t                 # (N, K, P)
+    cos_mean = torch.cos(x_t).mean(dim=-3)       # (K, P)
+    sin_mean = torch.sin(x_t).mean(dim=-3)       # (K, P)
+    err = (cos_mean - phi).square() + sin_mean.square()
+    return (err @ weights) * N                   # (K,)
+
+
+def sigreg_gaussian(content, num_slices: int = 100, t_max: float = 3.0,
+                    n_points: int = 17):
+    """SIGReg (LeJEPA) penalty: deviation of `content` from N(0, I).
+
+    Projects the (flattened) content onto `num_slices` random unit directions
+    (sketching) and applies the univariate Epps-Pulley characteristic-function
+    goodness-of-fit test against the standard normal on each projection,
+    averaging the per-slice statistics. Minimising it drives the latent space
+    towards an isotropic standard Gaussian. Differentiable w.r.t. content.
+
+    Reference: Balestriero et al., "LeJEPA" (arXiv:2511.08544),
+    https://github.com/rbalestr-lab/lejepa.
+    """
+    x = content.reshape(content.shape[0], -1)
+    n_dims = x.shape[1]
+    device, dtype = x.device, x.dtype
+
+    # Integration grid for the CF test (matches the LeJEPA trapezoid rule).
+    t = torch.linspace(0, t_max, n_points, device=device, dtype=dtype)
+    dt = t_max / (n_points - 1)
+    weights = torch.full((n_points,), 2 * dt, device=device, dtype=dtype)
+    weights[0] = dt
+    weights[-1] = dt                              # half weight at the endpoints
+    phi = torch.exp(-0.5 * t.square())            # standard-normal CF, exp(-t^2/2)
+    weights = weights * phi
+
+    # Random unit-norm projection directions (Gaussian sketch).
+    directions = torch.randn(n_dims, num_slices, device=device, dtype=dtype)
+    directions = directions / directions.norm(p=2, dim=0)
+    proj = x @ directions                         # (N, num_slices)
+
+    stats = _epps_pulley_statistic(proj, t, phi, weights)
+    return stats.mean()
+
 
 class TRANSIT(LightningModule):
     
@@ -217,7 +275,10 @@ class TRANSIT(LightningModule):
             self.automatic_optimization = False
             self.adversarial_cfg = adversarial_cfg
             self.disc_input_noise_std = getattr(adversarial_cfg, "disc_input_noise_std", 0.0)
-
+            if not hasattr(adversarial_cfg, "warmup"):
+                setattr(adversarial_cfg, "warmup", 0)
+            if not hasattr(adversarial_cfg, "warmup_steps"):
+                setattr(adversarial_cfg, "warmup_steps", 0)
             if not hasattr(adversarial_cfg, "g_loss_weight_in_warmup"):
                 setattr(adversarial_cfg, "g_loss_weight_in_warmup", True)
             if not hasattr(adversarial_cfg, "train_dis_in_warmup"):
@@ -232,7 +293,11 @@ class TRANSIT(LightningModule):
                 setattr(adversarial_cfg, "label_smoothing_eps", 0)
         else:
             self.adversarial = False
+            # Use manual optimisation here too (consistent with the adversarial
+            # path), so LR scheduling behaves the same with or without a discriminator.
+            self.automatic_optimization = False
             self.disc_input_noise_std = 0.0
+            self.gradient_clip_val = None
         if true_trajectory_pickle_file is not None:
             self.true_trajectory_function = pickle.load(open(true_trajectory_pickle_file, "rb"))
         else:
@@ -243,10 +308,14 @@ class TRANSIT(LightningModule):
         self.save_hyperparameters(logger=False)
         self.network_type = network_type
         print("SELECTED NETWORK TYPE: ", network_type)
+        # Sphericity (latent_norm) applies only to the CONTENT latent (encoder1).
+        # encoder2 is the identity pass-through of the (1-D) conditioning mass, so
+        # normalising it would collapse it to sign(m) and break mass conditioning.
         self.latent_norm_enc1 = latent_norm
-        self.latent_norm_enc2 = latent_norm
+        self.latent_norm_enc2 = False
         self.total_skip = total_skip
         self.do_switch_off_adversary_in_case_of_instability = do_switch_off_adversary_in_case_of_instability
+        self.warmup_steps_done = 0
         # Initialise the networks
         if hasattr(inpt_dim[0], "__getitem__"):
             x_dim = inpt_dim[0][0]
@@ -328,6 +397,7 @@ class TRANSIT(LightningModule):
                 "noised_reco",
                 "consistency_noised",
                 "latent_ed_gaussian",
+                "latent_sigreg_cfg",
                 "consistency_noise",
                 "projected_context_ed_gaussian",
                 "latent_mean_cfg",
@@ -997,10 +1067,41 @@ class TRANSIT(LightningModule):
                 else:
                     total_loss += loss_ed_gaussian*self.loss_cfg.latent_ed_gaussian.w(self.global_step)
 
+        # SIGReg (LeJEPA) latent regularisation: push `content` towards N(0, I) via
+        # sketched (random-projection) Epps-Pulley CF tests against the standard normal.
+        if self.loss_cfg.latent_sigreg_cfg is not None:
+            _sig_num_slices = int(self._cfg_get(self.loss_cfg.latent_sigreg_cfg, "num_slices", 100))
+            _sig_t_max = float(self._cfg_get(self.loss_cfg.latent_sigreg_cfg, "t_max", 3.0))
+            _sig_n_points = int(self._cfg_get(self.loss_cfg.latent_sigreg_cfg, "n_points", 17))
+            loss_sigreg = sigreg_gaussian(
+                content,
+                num_slices=_sig_num_slices,
+                t_max=_sig_t_max,
+                n_points=_sig_n_points,
+            )
+            self.log(f"{step_type}/loss_sigreg", loss_sigreg)
+            if self.loss_cfg.latent_sigreg_cfg.w is not None:
+                if isinstance(self.loss_cfg.latent_sigreg_cfg.w, float) or isinstance(self.loss_cfg.latent_sigreg_cfg.w, int):
+                    total_loss += loss_sigreg*self.loss_cfg.latent_sigreg_cfg.w
+                else:
+                    total_loss += loss_sigreg*self.loss_cfg.latent_sigreg_cfg.w(self.global_step)
+
         # latent variance loss
         if self.loss_cfg.latent_variance_cfg is not None:
-            var = content.var(dim=0)
-            loss_latent_variance = torch.mean(torch.abs(1 - var)**self.loss_cfg.latent_variance_cfg.pow)# + torch.mean(torch.square(1 - std_e2)**self.loss_cfg.latent_variance_cfg.pow) / 2
+            # Optionally measure the variance in a random orthogonal basis (isotropy),
+            # otherwise along the canonical latent axes.
+            if bool(self._cfg_get(self.loss_cfg.latent_variance_cfg, "random_rotation", False)):
+                D = content.shape[1]
+                Q, _ = torch.linalg.qr(torch.randn(D, D, device=content.device, dtype=content.dtype))
+                content_for_var = content @ Q
+            else:
+                content_for_var = content
+            var = content_for_var.var(dim=0)
+            # Target per-component variance (default 1). For a spherical (unit-norm)
+            # latent uniform on S^(d-1) the per-axis variance is 1/d, so set
+            # `target: 0.142857...` (= 1/7) for latent_dim=7, etc.
+            var_target = float(self._cfg_get(self.loss_cfg.latent_variance_cfg, "target", 1.0))
+            loss_latent_variance = torch.mean(torch.abs(var_target - var)**self.loss_cfg.latent_variance_cfg.pow)# + torch.mean(torch.square(1 - std_e2)**self.loss_cfg.latent_variance_cfg.pow) / 2
             if self.loss_cfg.latent_variance_cfg.w is not None:
                 total_loss += loss_latent_variance*self.loss_cfg.latent_variance_cfg.w
             self.log(f"{step_type}/variance_regularization", loss_latent_variance)
@@ -1011,7 +1112,8 @@ class TRANSIT(LightningModule):
             Q, _ = torch.linalg.qr(torch.randn(D, D, device=content.device, dtype=content.dtype))
             content_for_var = content @ Q
             var = content_for_var.var(dim=0)
-            latent_variance_proj = torch.mean(torch.abs(1 - var)**self.loss_cfg.latent_variance_proj_cfg.pow)
+            var_target = float(self._cfg_get(self.loss_cfg.latent_variance_proj_cfg, "target", 1.0))
+            latent_variance_proj = torch.mean(torch.abs(var_target - var)**self.loss_cfg.latent_variance_proj_cfg.pow)
             if self.loss_cfg.latent_variance_proj_cfg.w is not None:
                 total_loss += latent_variance_proj*self.loss_cfg.latent_variance_proj_cfg.w
             self.log(f"{step_type}/variance_regularization", latent_variance_proj)
@@ -1203,7 +1305,15 @@ class TRANSIT(LightningModule):
             # train discriminator
             # Measure discriminator's ability to classify encoded samples with correct mass and encoded samples with incorrect mass
             allow_gen_train = True
-            if self.current_epoch>=self.adversarial_cfg.warmup or self.adversarial_cfg.train_dis_in_warmup:
+            in_warmup = False
+            if self.current_epoch<self.adversarial_cfg.warmup:
+                in_warmup = True
+            if self.warmup_steps_done<self.adversarial_cfg.warmup_steps:
+                in_warmup = True
+                self.warmup_steps_done+=1
+
+            # train discriminator
+            if (not in_warmup) or self.adversarial_cfg.train_dis_in_warmup:
                 if self.use_disc_lat:
                     # Train discriminator for latent space (with optional input noise)
                     e_lat = torch.cat([e1, e1_copy], dim=0)
@@ -1257,14 +1367,20 @@ class TRANSIT(LightningModule):
                         
                 if self.dis_steps_per_gen<self.adversarial_cfg.every_n_steps_g:
                     allow_gen_train = False
-                        
+
+            # Logic to switch on training og generator            
             if self.current_epoch>self.afterglow_epoch:
                 allow_gen_train = False
+            if in_warmup:
+                allow_gen_train = True #Always train generator in warmup phase, even if discriminator is weak, to avoid collapse
+
+            # Logic to add adversarial loss to generator training
+            allow_gen_adversarial_loss = ((not in_warmup) or self.adversarial_cfg.g_loss_weight_in_warmup) and not self.switch_off_adversary_in_case_of_instability
 
             # Train generator
-            if self.current_epoch<self.adversarial_cfg.warmup or allow_gen_train:
+            if allow_gen_train:
                 total_loss2 = total_loss
-                if (self.current_epoch>self.adversarial_cfg.warmup or self.adversarial_cfg.g_loss_weight_in_warmup) and not self.switch_off_adversary_in_case_of_instability:
+                if allow_gen_adversarial_loss:
                     if isinstance(self.adversarial_cfg.g_loss_weight, float) or isinstance(self.adversarial_cfg.g_loss_weight, int):
                         g_loss_weight = self.adversarial_cfg.g_loss_weight
                     else:
@@ -1303,9 +1419,15 @@ class TRANSIT(LightningModule):
                 self.dis_steps_per_gen = 0
         elif self.adversarial:
             assert False, "Adversarial mode not implemented"
-        else:	
+        else:
             self._ema_should_update_this_batch = True
+            optimizer = self.optimizers()
             total_loss = self._shared_step(sample, step_type="train", _batch_index=batch_idx)
+            optimizer.zero_grad()
+            self.manual_backward(total_loss)
+            if self.gradient_clip_val is not None:
+                self.clip_gradients(optimizer, gradient_clip_val=self.gradient_clip_val)
+            optimizer.step()
             return total_loss
 
     def _draw_event_transport_trajectories(self, w1_, m_pair_, var, var_name, masses="auto", max_traj=20, plot_second_derivative=True, return_type="PIL"):
@@ -1430,6 +1552,40 @@ class TRANSIT(LightningModule):
         torch.cuda.empty_cache()
         return img, None
 
+    def _draw_latent_marginals(self, content, return_type="PIL"):
+        """Histogram the marginal distribution of every latent component for one
+        batch of content latents. Returns a PIL image (or the figure)."""
+        z = np.asarray(to_np(content)).reshape(content.shape[0], -1)
+        n_dim = z.shape[1]
+        ncols = min(4, n_dim)
+        nrows = int(np.ceil(n_dim / ncols))
+        fig, axes = plt.subplots(
+            nrows, ncols, figsize=(3.0 * ncols, 2.4 * nrows), squeeze=False
+        )
+        for d in range(n_dim):
+            ax = axes[d // ncols][d % ncols]
+            ax.hist(z[:, d], bins=50, color="C0", alpha=0.8)
+            ax.set_title(f"latent {d} (mean={z[:, d].mean():.2f}, std={z[:, d].std():.2f})",
+                         fontsize=8)
+            ax.tick_params(labelsize=7)
+        for d in range(n_dim, nrows * ncols):  # hide unused panels
+            axes[d // ncols][d % ncols].axis("off")
+        fig.suptitle(
+            f"Latent marginals (1 batch, N={z.shape[0]}), "
+            f"step: {self.global_step}, epoch: {self.current_epoch}",
+            fontsize=9,
+        )
+        fig.tight_layout()
+        fig.canvas.draw()
+        if return_type == "PIL":
+            width, height = fig.canvas.get_width_height()
+            buf = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8).reshape(height, width, 4)
+            buf = buf[:, :, [1, 2, 3, 0]]  # ARGB to RGBA
+            img = PIL.Image.fromarray(buf, "RGBA")
+            plt.close("all")
+            return img
+        return fig
+
     def validation_step (self, sample: tuple, batch_idx: int) -> torch.Tensor:
         if not self.adversarial:
             total_loss = self._shared_step(sample, step_type="valid", _batch_index=batch_idx)
@@ -1442,6 +1598,11 @@ class TRANSIT(LightningModule):
                     if self.add_standardizing_layer:
                         x_inp = self.std_layer_x(x_inp, mask=mask)
                         m_pair = self.std_layer_ctxt(m_pair)
+                    # Marginals of all latent variables for this batch.
+                    content_lat = self.encode_content(x_inp, m_pair, mask=mask)
+                    if wandb.run is not None:
+                        wandb.run.log({"valid_images/latent_marginals":
+                                       wandb.Image(self._draw_latent_marginals(content_lat))})
                     for var in range(x_inp.shape[1]):
                         image_traj, images_2der = self._draw_event_transport_trajectories(
                             x_inp,
@@ -1483,6 +1644,10 @@ class TRANSIT(LightningModule):
                     self.log("valid\d_loss_gen", d_loss_gen, prog_bar=True)
             
         if batch_idx == 0 and self.valid_plots and self.current_epoch%self.valid_plot_freq==0:
+            # Marginals of all latent variables for this batch (e1 is the content latent).
+            if wandb.run is not None:
+                wandb.run.log({"valid_images/latent_marginals":
+                               wandb.Image(self._draw_latent_marginals(e1))})
             for var in range(w1.shape[1]):
                 image_traj, images_2der = self._draw_event_transport_trajectories(w1, w2, var=var, var_name=self.var_group_list[0][var], max_traj=20)
                 if wandb.run is not None:
@@ -1609,21 +1774,30 @@ class TRANSIT(LightningModule):
         else:
             # Finish initialising the partialy created methods
             opt = self.hparams.optimizer(params=self.parameters())
-
             sched = self.hparams.scheduler.scheduler(opt)
 
-            # Return the dict for the lightning trainer
-            return {
-                "optimizer": opt,
-                "lr_scheduler": {"scheduler": sched, **self.hparams.scheduler.lightning},
-            }
+            if self.automatic_optimization:
+                # mmd/energy transport: let lightning drive the scheduler.
+                return {
+                    "optimizer": opt,
+                    "lr_scheduler": {"scheduler": sched, **self.hparams.scheduler.lightning},
+                }
+            # Manual optimisation (no discriminator): return lists so the scheduler
+            # is exposed via self.lr_schedulers() and stepped per epoch in
+            # on_train_epoch_end, exactly like the adversarial path.
+            return [opt], [sched]
 
     def on_train_epoch_end(self) -> None:
         """Makes several plots of the jets and how they are reconstructed.
         """
-        if self.adversarial:
-            if self.lr_schedulers() is not None:
-                for sched in self.lr_schedulers():
+        # Step schedulers once per epoch whenever we optimise manually (both the
+        # adversarial and the no-discriminator paths), for consistent LR scheduling.
+        if not self.automatic_optimization:
+            scheds = self.lr_schedulers()
+            if scheds is not None:
+                if not isinstance(scheds, (list, tuple)):
+                    scheds = [scheds]
+                for sched in scheds:
                     sched.step()
     
     def generate(self, sample: tuple) -> torch.Tensor:

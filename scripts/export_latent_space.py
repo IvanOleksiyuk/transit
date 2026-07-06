@@ -52,6 +52,12 @@ def main(cfg: DictConfig) -> None:
     # Cycle through the datasets and create the dataloader
     log.info("Running latent prediction")
     model.eval() #PL should do it but I just do it to be sure
+    # Export the latent with the EMA weights, matching validation/plots and the
+    # transport-template generation. trainer.predict() applies these via
+    # on_predict_start, but this script calls get_latent directly, so apply them
+    # explicitly here (no-op if EMA is disabled or no shadow is stored).
+    if hasattr(model, "_ema_apply_eval_weights"):
+        model._ema_apply_eval_weights()
     e1s = []
     for batch in datamodule.test_dataloader():
         e1s.append(model.get_latent(batch[0].to(device), batch[1].to(device)).detach().cpu())
