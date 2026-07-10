@@ -161,7 +161,7 @@ export_latent_sb:
   loader_kwargs:
     pin_memory: true
     batch_size: ${data.training_batch_size}
-    num_workers: 16
+    num_workers: 8
     drop_last: false
     persistent_workers: True
 
@@ -177,7 +177,7 @@ export_latent_sr:
   loader_kwargs:
     pin_memory: true
     batch_size: ${data.training_batch_size}
-    num_workers: 16
+    num_workers: 8
     drop_last: false
     persistent_workers: True
 
@@ -207,7 +207,7 @@ export_latent_sb1:
   loader_kwargs:
     pin_memory: true
     batch_size: ${data.training_batch_size}
-    num_workers: 16
+    num_workers: 8
     drop_last: true
     persistent_workers: True
 
@@ -234,7 +234,7 @@ export_latent_sb2:
   loader_kwargs:
     pin_memory: true
     batch_size: ${data.training_batch_size}
-    num_workers: 16
+    num_workers: 8
     drop_last: true
     persistent_workers: True
 
@@ -283,7 +283,7 @@ export_SB1:
   loader_kwargs:
     pin_memory: true
     batch_size: ${data.training_batch_size}
-    num_workers: 16
+    num_workers: 8
     drop_last: true
     persistent_workers: True
 
@@ -333,7 +333,7 @@ export_SB2:
   loader_kwargs:
     pin_memory: true
     batch_size: ${data.training_batch_size}
-    num_workers: 16
+    num_workers: 8
     drop_last: true
     persistent_workers: True
 
@@ -378,7 +378,7 @@ export_SB1toSR:
   loader_kwargs:
     pin_memory: true
     batch_size: ${data.training_batch_size}
-    num_workers: 16
+    num_workers: 8
     drop_last: true
     persistent_workers: True
 
@@ -423,6 +423,6 @@ export_SB2toSR:
   loader_kwargs:
     pin_memory: true
     batch_size: ${data.training_batch_size}
-    num_workers: 16
+    num_workers: 8
     drop_last: true
     persistent_workers: True
