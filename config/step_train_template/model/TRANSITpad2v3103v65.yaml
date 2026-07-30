@@ -37,7 +37,7 @@ decoder_cfg:
   ctxt_in_out: False
   scale_residual: True
 latent_norm: False
-latent_dim: 6
+latent_dim: auto
 loss_cfg:
   reco:
     w: 0.5

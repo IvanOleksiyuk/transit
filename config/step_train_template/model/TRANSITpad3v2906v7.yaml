@@ -35,9 +35,10 @@ decoder_cfg:
   ctxt_in_hddn: True
   ctxt_in_out: False
 # Spherical latent: the latent vector is L2-normalised to unit magnitude, so it
-# lives on the unit sphere S^(latent_dim-1).
+# lives on the unit sphere S^(latent_dim-1). One latent variable more than the
+# inputs, since the unit-norm constraint removes one degree of freedom.
 latent_norm: True
-latent_dim: 7
+latent_dim: inp+1
 loss_cfg:
   reco:
     w: 1
@@ -49,8 +50,8 @@ loss_cfg:
     random_rotation: true
     # For a unit-norm latent uniform on S^(d-1) the per-component variance is 1/d.
     # Uniform-on-sphere is isotropic, so the 1/d target is rotation-invariant.
-    # latent_dim=7 -> target = 1/7 = 0.14285714285714285.
-    target: 0.14285714285714285
+    # "auto" tracks the resolved latent_dim (6 inputs -> 7 -> 1/7 = 0.142857...).
+    target: auto
   latent_mean_cfg:
     w: 0.02
   rot_loss_cfg:

@@ -10,7 +10,8 @@ import pytorch_lightning as pl
 import torch as T
 import math
 import pickle
-from omegaconf import DictConfig
+import re
+from omegaconf import DictConfig, open_dict
 from pathlib import Path
 import sys
 import os
@@ -19,6 +20,82 @@ from transit.src.utils.hydra_utils import instantiate_collection, log_hyperparam
 from transit.src.utils.model_visualization import visualize_fx_graph_png
 
 log = logging.getLogger(__name__)
+
+
+def get_input_dim(inpt_dim) -> int:
+    """Return the number of input variables from what the datamodule reports.
+
+    The datamodule returns either a list of shapes or a list of ints, the first
+    entry always describing the "data" frame (the observables); the second entry
+    is the conditioning (mass) frame and is not counted here.
+    """
+    if hasattr(inpt_dim[0], "__getitem__"):
+        return int(inpt_dim[0][0])
+    else:
+        return int(inpt_dim[0])
+
+
+def resolve_latent_dim(latent_dim_cfg, x_dim: int) -> int:
+    """Resolve a latent dimension specification against the number of inputs.
+
+    Accepted values:
+      - an int, e.g. `6`: used as it is
+      - `null`, `auto` or `inp`: as many latent variables as input variables
+      - `inp+N` / `inp-N`, e.g. `inp+1`: N more/fewer latent variables than
+        input variables. `inp+1` is the right choice with `latent_norm: True`,
+        where the unit-norm constraint removes one degree of freedom.
+    """
+    if latent_dim_cfg is None:
+        return x_dim
+    if isinstance(latent_dim_cfg, int):
+        return latent_dim_cfg
+
+    spec = str(latent_dim_cfg).strip().replace(" ", "")
+    if spec in ("auto", "inp"):
+        return x_dim
+
+    match = re.fullmatch(r"inp([+-]\d+)", spec)
+    if match is None:
+        raise ValueError(
+            f"Could not interpret latent_dim={latent_dim_cfg!r}. "
+            "Use an int, null, 'auto', 'inp', or 'inp+N'/'inp-N'."
+        )
+    latent_dim = x_dim + int(match.group(1))
+    if latent_dim < 1:
+        raise ValueError(
+            f"latent_dim={latent_dim_cfg!r} gives {latent_dim} latent variables "
+            f"for {x_dim} input variables, which is not a valid dimension."
+        )
+    return latent_dim
+
+
+def resolve_latent_dim_in_cfg(cfg: DictConfig, inpt_dim) -> None:
+    """Replace symbolic latent dimensions in the model config with real ints.
+
+    Done here rather than inside the model so that the resolved values land in
+    the saved config, in the logged hyperparameters and in the checkpoints.
+    """
+    if "latent_dim" not in cfg.model:
+        return
+
+    x_dim = get_input_dim(inpt_dim)
+    latent_dim_cfg = cfg.model.latent_dim
+    latent_dim = resolve_latent_dim(latent_dim_cfg, x_dim)
+    if latent_dim_cfg != latent_dim:
+        log.info(
+            f"Resolved latent_dim={latent_dim_cfg!r} to {latent_dim} "
+            f"for {x_dim} input variables"
+        )
+    with open_dict(cfg.model):
+        cfg.model.latent_dim = latent_dim
+
+    # The per-component variance target of a unit-norm latent depends on the
+    # latent dimension, so it has to follow it (uniform on S^(d-1) -> 1/d).
+    variance_cfg = cfg.model.get("loss_cfg", {}).get("latent_variance_cfg", None)
+    if variance_cfg is not None and variance_cfg.get("target", None) == "auto":
+        with open_dict(variance_cfg):
+            variance_cfg.target = 1.0 / latent_dim
+        log.info(f"Resolved latent variance target to {variance_cfg.target}")
 
 
 def export_model_visualizations(model, output_dir: Path) -> None:
@@ -163,7 +240,9 @@ def main(cfg: DictConfig) -> None:
             update_sheduler_cfgs(cfg, epoch_scale)
     
     log.info("Instantiating the model")
-    model = hydra.utils.instantiate(cfg.model, inpt_dim=datamodule.get_dims(), var_group_list=datamodule.get_var_group_list(), seed=cfg.seed, dequantization_cfg=dequantization_cfg)
+    inpt_dim = datamodule.get_dims()
+    resolve_latent_dim_in_cfg(cfg, inpt_dim)
+    model = hydra.utils.instantiate(cfg.model, inpt_dim=inpt_dim, var_group_list=datamodule.get_var_group_list(), seed=cfg.seed, dequantization_cfg=dequantization_cfg)
     log.info(model)
 
     log.info("Exporting model visualizations")

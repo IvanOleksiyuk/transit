@@ -13,7 +13,7 @@ decoder_cfg:
   _target_: transit.mattstools.mattstools.modules_myy_modulated.JustPropagateInput
   _partial_: true
 latent_norm: False
-latent_dim: 6
+latent_dim: auto
 loss_cfg:
   reco:
     w: 1

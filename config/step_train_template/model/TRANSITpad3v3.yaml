@@ -35,7 +35,7 @@ decoder_cfg:
   ctxt_in_hddn: True
   ctxt_in_out: False
 latent_norm: False
-latent_dim: 6
+latent_dim: auto
 loss_cfg:
   reco:
     w: 1
