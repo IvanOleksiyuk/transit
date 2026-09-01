@@ -19,7 +19,7 @@ feature_list:
   - motion_latitude
 
 template_training:
-  _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
+  _target_: skytransit.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
     data_dir: ${private.data_dir}
     patch_id: ${data.patch_id}
@@ -40,7 +40,7 @@ template_training:
 # Please change everything that goes below!!!
 
 export_template:
-  _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
+  _target_: skytransit.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
     data_dir: ${private.data_dir}
     patch_id: ${data.patch_id}
@@ -58,7 +58,7 @@ export_template:
     drop_last: False
 
 export_SB1:
-  _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
+  _target_: skytransit.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
     data_dir: ${private.data_dir}
     sample_bin: SB1
@@ -77,7 +77,7 @@ export_SB1:
     drop_last: False
 
 export_SB2:
-  _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
+  _target_: skytransit.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
     data_dir: ${private.data_dir}
     sample_bin: SB2
@@ -96,7 +96,7 @@ export_SB2:
     drop_last: False
 
 export_SB1toSR:
-  _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
+  _target_: skytransit.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
     data_dir: ${private.data_dir}
     sample_bin: SR
@@ -115,7 +115,7 @@ export_SB1toSR:
     drop_last: False
 
 export_SB2toSR:
-  _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
+  _target_: skytransit.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
     data_dir: ${private.data_dir}
     sample_bin: SR
@@ -136,7 +136,7 @@ export_SB2toSR:
 # Some datasets for evaluation
 
 eval_SB1:
-  _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
+  _target_: skytransit.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
     data_dir: ${private.data_dir}
     sample_bin: SB1
@@ -155,7 +155,7 @@ eval_SB1:
     drop_last: False
 
 eval_SB2:
-  _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
+  _target_: skytransit.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
     data_dir: ${private.data_dir}
     sample_bin: SB2
@@ -174,7 +174,7 @@ eval_SB2:
     drop_last: False
 
 eval_SR:
-  _target_: skycurtains.data.gdr3_dataclasses.GDR3DataModuleTop
+  _target_: skytransit.data.gdr3_dataclasses.GDR3DataModuleTop
   data_config:
     data_dir: ${private.data_dir}
     sample_bin: SR
