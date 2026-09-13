@@ -2,7 +2,7 @@ defaults:
   - _self_
   - model: TRANSITv0v2.yaml
   - callbacks: default.yaml
-  - loggers: wandb.yaml
+  - loggers: comet.yaml
   - paths: default.yaml
   - trainer: 200e_noclip.yaml
   - data: default.yaml

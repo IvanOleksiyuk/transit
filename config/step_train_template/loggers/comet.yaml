@@ -1,0 +1,39 @@
+# Online experiment tracking with Comet ML: a wandb-style live dashboard for
+# watching a run from a laptop without an ssh tunnel, comparing runs and sharing
+# a link.
+#
+# DEFAULT since 2026-09-13 (selected in step_train_template/transitv_0v2.yaml).
+#
+# Requires, on the machine that trains:
+#   - the comet_ml package (pip install comet_ml); it is NOT a dependency of
+#     this repo and is not in the standard container image -- on baobab the job
+#     scripts put /srv/beegfs/dpnc/groups/atlas/oleksiyuk/WSS/pylibs on
+#     PYTHONPATH for it
+#   - an API key, taken from $COMET_API_KEY, or from ~/.comet.config if that
+#     variable is unset
+#
+# If either is missing, train_ptl.py logs a warning and FALLS BACK to the
+# offline TensorBoard logger instead of crashing, so a run on a machine without
+# comet_ml still trains; only the dashboard is lost.
+#
+# Alternatives, none of which need comet_ml:
+#     step_train_template/loggers=tensorboard   offline event files
+#     step_train_template/loggers=wandb         offline wandb event files
+#     step_train_template/loggers=csv           plain CSV metrics
+#     ~step_train_template/loggers              no logger at all
+# selected from a workflow config,
+#     transit_train_mods: "step_train_template/loggers=tensorboard"
+# or on a training command line,
+#     python transit/scripts/full_run.py ... step_train_template/loggers=tensorboard
+comet:
+  _target_: pytorch_lightning.loggers.comet.CometLogger
+  # NO api_key here, deliberately. comet_ml reads COMET_API_KEY from the
+  # environment (or ~/.comet.config) by itself, and hydra writes the RESOLVED
+  # config to <run_dir>/full_config.yaml -- so an 'api_key: ${oc.env:...}' line
+  # would copy the secret in plaintext into every run directory on shared group
+  # storage. Keep the key in the environment, out of the config.
+  project: ${step_train_template.project_name}
+  online: True
+  # Forwarded to comet_ml.ExperimentConfig.
+  name: ${step_train_template.network_name}
+  offline_directory: ${general.run_dir}

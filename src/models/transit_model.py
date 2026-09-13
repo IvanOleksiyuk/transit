@@ -1586,6 +1586,44 @@ class TRANSIT(LightningModule):
             return img
         return fig
 
+    @property
+    def _image_logging_enabled(self) -> bool:
+        """Whether any attached logger can consume images."""
+        if wandb.run is not None:
+            return True
+        for logger in self.loggers:
+            experiment = getattr(logger, "experiment", None)
+            if hasattr(experiment, "add_image") or hasattr(experiment, "log_image"):
+                return True
+        return False
+
+    def _log_image(self, key: str, image) -> None:
+        """Log a PIL image to whichever logger is attached.
+
+        The three backends each want a different call, so dispatch on the method
+        the experiment object actually exposes rather than on the logger class:
+
+          wandb       the global run, taking a wandb.Image
+          tensorboard SummaryWriter.add_image, wanting an HWC uint8 array
+          comet       Experiment.log_image, taking the PIL image as-is
+
+        wandb's Run exposes neither add_image nor log_image, so the loop below
+        cannot double-log a run already handled by the wandb branch.
+        """
+        if wandb.run is not None:
+            wandb.run.log({key: wandb.Image(image)})
+        for logger in self.loggers:
+            experiment = getattr(logger, "experiment", None)
+            if hasattr(experiment, "add_image"):
+                experiment.add_image(
+                    key,
+                    np.array(image.convert("RGB")),
+                    global_step=self.global_step,
+                    dataformats="HWC",
+                )
+            elif hasattr(experiment, "log_image"):
+                experiment.log_image(image, name=key, step=self.global_step)
+
     def validation_step (self, sample: tuple, batch_idx: int) -> torch.Tensor:
         if not self.adversarial:
             total_loss = self._shared_step(sample, step_type="valid", _batch_index=batch_idx)
@@ -1600,23 +1638,28 @@ class TRANSIT(LightningModule):
                         m_pair = self.std_layer_ctxt(m_pair)
                     # Marginals of all latent variables for this batch.
                     content_lat = self.encode_content(x_inp, m_pair, mask=mask)
-                    if wandb.run is not None:
-                        wandb.run.log({"valid_images/latent_marginals":
-                                       wandb.Image(self._draw_latent_marginals(content_lat))})
-                    for var in range(x_inp.shape[1]):
-                        image_traj, images_2der = self._draw_event_transport_trajectories(
-                            x_inp,
-                            m_pair,
-                            var=var,
-                            var_name=self.var_group_list[0][var] if self.var_group_list else f"var{var}",
-                            max_traj=20,
+                    if self._image_logging_enabled:
+                        self._log_image(
+                            "valid_images/latent_marginals",
+                            self._draw_latent_marginals(content_lat),
                         )
-                        if wandb.run is not None:
-                            image = wandb.Image(image_traj)
-                            wandb.run.log({f"valid_images/transport_{self.var_group_list[0][var] if self.var_group_list else var}": image})
+                        for var in range(x_inp.shape[1]):
+                            if self.var_group_list:
+                                var_name = self.var_group_list[0][var]
+                            else:
+                                var_name = f"var{var}"
+                            image_traj, images_2der = self._draw_event_transport_trajectories(
+                                x_inp,
+                                m_pair,
+                                var=var,
+                                var_name=var_name,
+                                max_traj=20,
+                            )
+                            self._log_image(f"valid_images/transport_{var_name}", image_traj)
                             if images_2der is not None:
-                                image_2der = wandb.Image(images_2der)
-                                wandb.run.log({f"valid_images/transport_2der_{self.var_group_list[0][var] if self.var_group_list else var}": image_2der})
+                                self._log_image(
+                                    f"valid_images/transport_2der_{var_name}", images_2der
+                                )
             return total_loss
 
         total_loss, e1, e2, w1, w2 = self._shared_step(sample, step_type="valid", _batch_index=batch_idx)
@@ -1645,17 +1688,20 @@ class TRANSIT(LightningModule):
             
         if batch_idx == 0 and self.valid_plots and self.current_epoch%self.valid_plot_freq==0:
             # Marginals of all latent variables for this batch (e1 is the content latent).
-            if wandb.run is not None:
-                wandb.run.log({"valid_images/latent_marginals":
-                               wandb.Image(self._draw_latent_marginals(e1))})
-            for var in range(w1.shape[1]):
-                image_traj, images_2der = self._draw_event_transport_trajectories(w1, w2, var=var, var_name=self.var_group_list[0][var], max_traj=20)
-                if wandb.run is not None:
-                    image = wandb.Image(image_traj)
-                    wandb.run.log({f"valid_images/transport_{self.var_group_list[0][var]}": image})
+            if self._image_logging_enabled:
+                self._log_image(
+                    "valid_images/latent_marginals", self._draw_latent_marginals(e1)
+                )
+                for var in range(w1.shape[1]):
+                    var_name = self.var_group_list[0][var]
+                    image_traj, images_2der = self._draw_event_transport_trajectories(
+                        w1, w2, var=var, var_name=var_name, max_traj=20
+                    )
+                    self._log_image(f"valid_images/transport_{var_name}", image_traj)
                     if images_2der is not None:
-                        image_2der = wandb.Image(images_2der)
-                        wandb.run.log({f"valid_images/transport_2der_{self.var_group_list[0][var]}": image_2der})
+                        self._log_image(
+                            f"valid_images/transport_2der_{var_name}", images_2der
+                        )
         return total_loss
 
     def on_fit_start(self, *_args) -> None:

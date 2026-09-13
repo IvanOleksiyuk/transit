@@ -1,0 +1,11 @@
+# Offline-only logging: TensorBoard writes event files next to the run and needs
+# no account, no network and no storage quota. View them with
+#   tensorboard --logdir <run_dir>
+# Not the default any more (that is loggers/comet.yaml), but train_ptl.py falls
+# back to this logger when comet_ml or the Comet API key is unavailable.
+tensorboard:
+  _target_: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
+  save_dir: ${general.run_dir}
+  name: tensorboard
+  version: ""
+  default_hp_metric: False

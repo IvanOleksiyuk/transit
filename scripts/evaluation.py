@@ -29,6 +29,21 @@ import jsonpickle
 
 log = logging.getLogger(__name__)
 
+
+def wandb_log(payload: dict) -> None:
+    """Send metrics to wandb only when a wandb run is actually active.
+
+    Evaluation tries to resume the training run from template/wandb_id.txt so its
+    metrics land in the same run. With the default TensorBoard logger no wandb run
+    is ever started and that file does not exist, so the resume below fails and
+    every unguarded call raised "You must call wandb.init() before wandb.log()"
+    -- which killed evaluate_transit for the freshly trained inj_500 templates in
+    the 2026-09-07 rotbag run. Every value passed here is also written to
+    evaluation_results.json, so skipping the wandb call loses nothing.
+    """
+    if wandb.run is not None:
+        wandb.log(payload)
+
 # For some reason breaks if shuffle=False
 # Namely:
 # wandb: evaluation/AUCBDTclasstest_laSB1nSB2vsSR 0.8275
@@ -258,7 +273,7 @@ def main(cfg):
             SB2_gen)
         end_time = time.time()
         log.info(f"SB1toSB2 vs SB2 AUC={_fmt_auc(auc_score_1to2)} (took {end_time - start_time:.1f} seconds)")
-        wandb.log({"evaluation/AUCBDTclasstest_SB1toSB2": auc_score_1to2})
+        wandb_log({"evaluation/AUCBDTclasstest_SB1toSB2": auc_score_1to2})
         results["AUCBDTclasstest_SB1toSB2"] = auc_score_1to2
         
         start_time = time.time()
@@ -267,7 +282,7 @@ def main(cfg):
             SB1_gen)
         end_time = time.time()
         log.info(f"SB2toSB1 vs SB2 AUC={_fmt_auc(auc_score_2to1)} (took {end_time - start_time:.1f} seconds)")
-        wandb.log({"evaluation/AUCBDTclasstest_SB2toSB1": auc_score_2to1})
+        wandb_log({"evaluation/AUCBDTclasstest_SB2toSB1": auc_score_2to1})
         results["AUCBDTclasstest_SB2toSB1"] = auc_score_2to1        
     if getattr(cfg.step_evaluate, "bdt_two_sample_test_SB1nSB2toSR", True):
         from transit.srccwola.bdts import bdt_two_sample_test
@@ -285,7 +300,7 @@ def main(cfg):
         end_time = time.time()
         
         log.info(f"SB1toSR vs SR AUC={_fmt_auc(auc_score_SB1toSR)} (took {end_time - start_time:.1f} seconds)")
-        wandb.log({"evaluation/AUCBDTclasstest_SB1toSR": auc_score_SB1toSR})
+        wandb_log({"evaluation/AUCBDTclasstest_SB1toSR": auc_score_SB1toSR})
         results["AUCBDTclasstest_SB1toSR"] = auc_score_SB1toSR
         
         SR_data, SB2toSR_gen = equalise_to_min_len(
@@ -300,7 +315,7 @@ def main(cfg):
             SR_data)
         end_time = time.time()
         log.info(f"SB2toSR vs SR AUC={_fmt_auc(auc_score_SB2toSR)} (took {end_time - start_time:.1f} seconds)")
-        wandb.log({"evaluation/AUCBDTclasstest_SB2toSR": auc_score_SB2toSR})
+        wandb_log({"evaluation/AUCBDTclasstest_SB2toSR": auc_score_SB2toSR})
         results["AUCBDTclasstest_SB2toSR"] = auc_score_SB2toSR
     if getattr(cfg.step_evaluate, "bdt_two_sample_test_La_SB1nSB2vsSR", True):
         from transit.srccwola.bdts import bdt_two_sample_test
@@ -319,7 +334,7 @@ def main(cfg):
         log.info(f"Finish classifier train/eval (took {end_time - start_time} seconds)")
         
         log.info(f"laSB1nSB2 vs laSR AUC={AUCBDTclasstest_laSB1nSB2vsSR:.3f}")
-        wandb.log({"evaluation/AUCBDTclasstest_laSB1nSB2vsSR": AUCBDTclasstest_laSB1nSB2vsSR})
+        wandb_log({"evaluation/AUCBDTclasstest_laSB1nSB2vsSR": AUCBDTclasstest_laSB1nSB2vsSR})
         results["AUCBDTclasstest_laSB1nSB2vsSR"] = AUCBDTclasstest_laSB1nSB2vsSR
     if getattr(cfg.step_evaluate, "bdt_two_sample_test_La_SB1vsSR", True):
         from transit.srccwola.bdts import bdt_two_sample_test
@@ -338,7 +353,7 @@ def main(cfg):
         log.info(f"Finish classifier train/eval (took {end_time - start_time} seconds)")
         
         log.info(f"laSB1 vs laSR AUC={AUCBDTclasstest_laSB1vsSR:.3f}")
-        wandb.log({"evaluation/AUCBDTclasstest_laSB1vsSR": AUCBDTclasstest_laSB1vsSR})
+        wandb_log({"evaluation/AUCBDTclasstest_laSB1vsSR": AUCBDTclasstest_laSB1vsSR})
         results["AUCBDTclasstest_laSB1vsSR"] = AUCBDTclasstest_laSB1vsSR
     if getattr(cfg.step_evaluate, "bdt_two_sample_test_La_SB2vsSR", True):
         from transit.srccwola.bdts import bdt_two_sample_test
@@ -357,7 +372,7 @@ def main(cfg):
         log.info(f"Finish classifier train/eval (took {end_time - start_time} seconds)")
         
         log.info(f"laSB2 vs laSR AUC={AUCBDTclasstest_laSB2vsSR:.3f}")
-        wandb.log({"evaluation/AUCBDTclasstest_laSB2vsSR": AUCBDTclasstest_laSB2vsSR})
+        wandb_log({"evaluation/AUCBDTclasstest_laSB2vsSR": AUCBDTclasstest_laSB2vsSR})
         results["AUCBDTclasstest_laSB2vsSR"] = AUCBDTclasstest_laSB2vsSR
     if getattr(cfg.step_evaluate, "bdt_two_sample_test_La_SB1vsSB2", True):
         from transit.srccwola.bdts import bdt_two_sample_test
@@ -376,7 +391,7 @@ def main(cfg):
         log.info(f"Finish classifier train/eval (took {end_time - start_time:.1f} seconds)")
         
         log.info(f"laSB1 vs laSB2 AUC={auc_score_SB1vsSB2}")
-        wandb.log({"evaluation/AUCBDTclasstest_laSB1vsSB2": auc_score_SB1vsSB2})
+        wandb_log({"evaluation/AUCBDTclasstest_laSB1vsSB2": auc_score_SB1vsSB2})
         results["AUCBDTclasstest_laSB1vsSB2"] = auc_score_SB1vsSB2
 
 
@@ -525,7 +540,7 @@ def main(cfg):
         auc_score_1to2 = run1_result[0]
         log.info("Finish classifier train/eval")
         log.info(f"SB1toSB2 vs SB2 AUC={_fmt_auc(auc_score_1to2)}")
-        wandb.log({"evaluation/SKY_sb1to2_AUC": auc_score_1to2})
+        wandb_log({"evaluation/SKY_sb1to2_AUC": auc_score_1to2})
         results["sb1to2_AUC"] = auc_score_1to2
         
         log.info("Starting classifier train/eval")
@@ -539,7 +554,7 @@ def main(cfg):
         auc_score_2to1 = run2_result[0]
         log.info("Finish classifier train/eval")
         log.info(f"SB2toSB1 vs SB2 AUC={_fmt_auc(auc_score_2to1)}")
-        wandb.log({"evaluation/SKY_sb2to1_AUC": auc_score_2to1})
+        wandb_log({"evaluation/SKY_sb2to1_AUC": auc_score_2to1})
         results["sb2to1_AUC"] = auc_score_2to1        
     if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", False):
         if getattr(cfg.step_evaluate, "classifier_for_test", "SKY") == "SKY":
@@ -572,7 +587,7 @@ def main(cfg):
         log.info("Finish classifier train/eval")
         
         log.info(f"SB1toSR vs SR AUC={_fmt_auc(auc_score_SB1toSR)}")
-        wandb.log({"evaluation/SKYauc_score_SB1toSR_AUC": auc_score_SB1toSR})
+        wandb_log({"evaluation/SKYauc_score_SB1toSR_AUC": auc_score_SB1toSR})
         results["sb1toSR_AUC"] = auc_score_SB1toSR
         
         log.info("Starting classifier train/eval")
@@ -585,12 +600,12 @@ def main(cfg):
         )
         log.info("Finish classifier train/eval")
         log.info(f"SB2toSR vs SR AUC={_fmt_auc(auc_score_SB2toSR)}")
-        wandb.log({"evaluation/SKYauc_score_SB2toSR_AUC": auc_score_SB2toSR})
+        wandb_log({"evaluation/SKYauc_score_SB2toSR_AUC": auc_score_SB2toSR})
         results["sb2toSR_AUC"] = auc_score_SB2toSR    
     if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSR", False) and getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB2transport", False):
         deb_score = ((auc_score_1to2+auc_score_2to1)*2+auc_score_SB1toSR+auc_score_SB2toSR)/6
         log.info(f"deb_score={deb_score}")
-        wandb.log({"evaluation/SKYdeb_score": deb_score})
+        wandb_log({"evaluation/SKYdeb_score": deb_score})
         with open(cfg.general.run_dir+"/template/evaluate_sbtosb.txt", "w") as f:
             f.write(f"n_max_class_train={n_max}\n")
             f.write(f"sb1to2 vs sb2 AUC={_fmt_auc(auc_score_2to1)}\n")

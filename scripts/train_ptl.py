@@ -22,6 +22,53 @@ from transit.src.utils.model_visualization import visualize_fx_graph_png
 log = logging.getLogger(__name__)
 
 
+def comet_is_usable() -> bool:
+    """Return whether the Comet logger can actually run on this machine.
+
+    comet_ml is not a dependency of this repo (on baobab it comes from a
+    separate PYTHONPATH entry), and CometLogger needs an API key from the
+    environment or ~/.comet.config. Both are checked here up front so that a
+    missing one produces a clear warning instead of a stack trace deep inside
+    pytorch_lightning.
+    """
+    try:
+        import comet_ml  # noqa: F401
+    except ImportError:
+        log.warning("comet_ml is not importable in this environment")
+        return False
+    if os.getenv("COMET_API_KEY"):
+        return True
+    if Path("~/.comet.config").expanduser().exists():
+        return True
+    log.warning("No COMET_API_KEY in the environment and no ~/.comet.config")
+    return False
+
+
+def fall_back_to_tensorboard_if_comet_unusable(cfg: DictConfig) -> None:
+    """Replace a configured Comet logger by TensorBoard when Comet cannot run.
+
+    Comet is the default logger, but a run must not die just because the
+    dashboard is unavailable: training output is the point, the logger is a
+    convenience. The replacement mirrors loggers/tensorboard.yaml.
+    """
+    loggers_cfg = cfg.get("loggers", None)
+    if not loggers_cfg or "comet" not in loggers_cfg:
+        return
+    if comet_is_usable():
+        return
+    run_dir = str(Path(cfg.paths.full_path).parent)
+    log.warning(f"Comet logging unavailable, falling back to TensorBoard in {run_dir}")
+    with open_dict(loggers_cfg):
+        del loggers_cfg["comet"]
+        loggers_cfg["tensorboard"] = {
+            "_target_": "pytorch_lightning.loggers.tensorboard.TensorBoardLogger",
+            "save_dir": run_dir,
+            "name": "tensorboard",
+            "version": "",
+            "default_hp_metric": False,
+        }
+
+
 def get_input_dim(inpt_dim) -> int:
     """Return the number of input variables from what the datamodule reports.
 
@@ -170,6 +217,16 @@ def main(cfg: DictConfig) -> None:
         except Exception as e:
             print(f"Failed to get WANDB_API_KEY: {e}. Skipping.")
     
+    # Only start a wandb run when a wandb logger is actually configured. The
+    # default is now TensorBoard (offline, no account, no quota); without this
+    # guard the login/init below would still open an ONLINE wandb run, which is
+    # what it did before -- overriding offline: true in loggers/wandb.yaml and
+    # hanging at teardown once the account's storage quota was exhausted.
+    wandb_configured = "wandb" in (cfg.get("loggers", {}) or {})
+    if wandb_key and not wandb_configured:
+        print("No wandb logger configured; skipping wandb login/init.")
+        wandb_key = None
+
     if wandb_key:
         wandb.login(key=wandb_key)
         run_id = wandb.util.generate_id()
@@ -248,6 +305,8 @@ def main(cfg: DictConfig) -> None:
     log.info("Exporting model visualizations")
     export_model_visualizations(model, Path(cfg.paths.full_path))
 
+    fall_back_to_tensorboard_if_comet_unusable(cfg)
+
     log.info("Saving config so job can be resumed")
     save_config(cfg)
 
@@ -255,7 +314,10 @@ def main(cfg: DictConfig) -> None:
     callbacks = instantiate_collection(cfg.callbacks)
 
     log.info("Instantiating the loggers")
-    loggers = instantiate_collection(cfg.loggers)
+    # cfg.get, not cfg.loggers: the logger group is optional, so a run started
+    # with '~step_train_template/loggers' (no logging at all) must not die here.
+    # instantiate_collection already returns [] for an empty collection.
+    loggers = instantiate_collection(cfg.get("loggers", None))
 
     log.info("Instantiating the trainer")
     trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=loggers)
