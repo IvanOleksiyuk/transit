@@ -122,6 +122,11 @@ def main(cfg: DictConfig, update_runtime_file_lambda=None) -> None:
     log.info("Instantiating the loggers")
     loggers = instantiate_collection(cfg.loggers)
 
+    for _logger in loggers:
+        if _logger.__class__.__name__ == "CometLogger":
+            with open(cfg.paths.full_path + "/comet_experiment_key.txt", "w") as f:
+                f.write(_logger.experiment.get_key())
+
     log.info("Instantiating the trainer")
     trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=loggers)
 

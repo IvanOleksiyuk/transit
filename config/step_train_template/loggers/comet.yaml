@@ -1,0 +1,5 @@
+comet:
+  _target_: pytorch_lightning.loggers.CometLogger
+  project: ${step_train_template.project_name}
+  name: ${step_train_template.network_name}
+  online: True

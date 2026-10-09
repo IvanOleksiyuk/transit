@@ -21,6 +21,20 @@ closure_SKYclassifier_SBtoSB_transport: True
 closure_SKYclassifier_SBtoSR: True
 plot_everything_else: False
 
+# Pipeline-faithful CWoLa closure test (skyscan.cwola.CwolaClassifier), as an
+# additional, slower alternative to the closure_SKYclassifier_* blocks above.
+# Off by default: ensemble_size x max_iteration_count makes it noticeably
+# slower per fold than the quick internal closure test.
+closure_pipeline_cwola_SBtoSB_transport: False
+closure_pipeline_cwola_SBtoSR: False
+# Mirrors config/main.yaml's anomalous_source_detection.cwola block as of 2026-10.
+pipeline_cwola_ensemble_size: 50
+pipeline_cwola_learning_rate: 0.1
+pipeline_cwola_max_iteration_count: 200
+pipeline_cwola_max_leaf_node_count: 31
+pipeline_cwola_use_random_rotations: True
+pipeline_cwola_test_fraction: 0.2
+
 procedures: null
 n_max_class_train: 10000
 eval_classifier_model: BDT

@@ -89,7 +89,19 @@ def main(cfg):
         wandb.init(id=run_id, resume="allow")
     except:
         print("Could not resume wandb run")
-    
+
+    comet_experiment = None
+    comet_key_path = cfg.general.run_dir + "/template/comet_experiment_key.txt"
+    if os.path.exists(comet_key_path):
+        try:
+            import comet_ml
+            with open(comet_key_path, "r") as f:
+                comet_key = f.read().strip()
+            comet_experiment = comet_ml.ExistingExperiment(experiment_key=comet_key)
+            log.info(f"Resumed comet experiment {comet_key}")
+        except Exception as e:
+            print(f"Could not resume comet experiment: {e}")
+
     # Plot the transport from SB1 to SB2
     data = {} # a dictionary to store the data
     for key in cfg.step_evaluate.data:
@@ -131,7 +143,9 @@ def main(cfg):
             tag = ["SB1, SB2", "SR"],
             save_name="SB2nSB1_to_SR")
         log.info("contour plot is done, in "+str(time.time()-time_start)+" seconds")
-        
+        if comet_experiment is not None:
+            comet_experiment.log_image(cfg.general.run_dir+"/plots/SB2nSB1_to_SR.png", name="SB2nSB1_to_SR")
+
     if getattr(cfg.step_evaluate, "plot_contour_SB1toSB2transport", True):
         if check_data_loaded(["original_for_SB1_data", "SB1_gen_file", "original_for_SB2_data", "target_for_SB1_data", "target_for_SB2_data"], data)!=[]:
             print("Missing data: ", check_data_loaded(["original_for_SB1_data", "SB1_gen_file", "original_for_SB2_data", "target_for_SB1_data", "target_for_SB2_data"], data))
@@ -148,6 +162,8 @@ def main(cfg):
                 tag = ["SB2", "SB1"],
                 save_name="SB2_to_SB1")
             log.info("Plotted SB2 to SB1 transport")
+            if comet_experiment is not None:
+                comet_experiment.log_image(cfg.general.run_dir+"/plots/SB2_to_SB1.png", name="SB2_to_SB1")
             pltt.plot_feature_spread(
                 data["target_for_SB2_data"][variables].to_numpy(),
                 data["SB2_gen_file"][variables].to_numpy(),
@@ -160,7 +176,9 @@ def main(cfg):
                 tag = ["SB1", "SB2"],
                 save_name="SB1_to_SB2")
             log.info("Plotted SB1 to SB2 transport")
-    
+            if comet_experiment is not None:
+                comet_experiment.log_image(cfg.general.run_dir+"/plots/SB1_to_SB2.png", name="SB1_to_SB2")
+
     if getattr(cfg.step_evaluate, "closure_SKYclassifier_SBtoSB_transport", False):
         from skytransit.model.denseclassifier import run_classifier_folds
         from skytransit.utils.cwola_utils import run_validation_BDT_folds
@@ -276,9 +294,111 @@ def main(cfg):
         results["deb_score"] = deb_score
         wandb.log({"evaluation/deb_score": deb_score})
 
+    # Pipeline-faithful CWoLa closure test: same classifier (skyscan.cwola.CwolaClassifier,
+    # with RandomRotation + class-balanced weighting) and same weighted-AUC computation as
+    # the real pipeline's CWoLa scan stage, as opposed to the quick internal closure test
+    # above. Off by default (slower); see transit/config/step_evaluate/transit_SKY.yaml.
+    pipeline_cwola_kwargs = dict(
+        ensemble_size=cfg.step_evaluate.get("pipeline_cwola_ensemble_size", 50),
+        learning_rate=cfg.step_evaluate.get("pipeline_cwola_learning_rate", 0.1),
+        max_iteration_count=cfg.step_evaluate.get("pipeline_cwola_max_iteration_count", 200),
+        max_leaf_node_count=cfg.step_evaluate.get("pipeline_cwola_max_leaf_node_count", 31),
+        use_random_rotations=cfg.step_evaluate.get("pipeline_cwola_use_random_rotations", True),
+        test_fraction=cfg.step_evaluate.get("pipeline_cwola_test_fraction", 0.2),
+    )
+
+    if getattr(cfg.step_evaluate, "closure_pipeline_cwola_SBtoSB_transport", False):
+        from skytransit.utils.cwola_utils import run_pipeline_cwola_folds
+
+        SB1_data = data["target_for_SB1_data"].to_numpy()[:, :-1]
+        SB1_gen = data["SB1_gen_file"].to_numpy()[:, :-1]
+        SB2_data = data["target_for_SB2_data"].to_numpy()[:, :-1]
+        SB2_gen = data["SB2_gen_file"].to_numpy()[:, :-1]
+
+        n_max = cfg.step_evaluate.get("n_max_class_train", 10000)
+        if n_max is not None and n_max > 0:
+            SB1_data = SB1_data[:n_max]
+            SB1_gen = SB1_gen[:n_max]
+            SB2_data = SB2_data[:n_max]
+            SB2_gen = SB2_gen[:n_max]
+
+        log.info("Starting pipeline-faithful CWoLa classifier train/eval")
+        pipeline_auc_1to2, _, _ = run_pipeline_cwola_folds(
+            SB2_data, SB2_gen, save_dir=Path(cfg.general.run_dir), tag="sb1to2", **pipeline_cwola_kwargs
+        )
+        log.info(f"[pipeline cwola] SB1toSB2 vs SB2 AUC={pipeline_auc_1to2}")
+        results["pipeline_sb1to2_AUC"] = pipeline_auc_1to2
+
+        pipeline_auc_2to1, _, _ = run_pipeline_cwola_folds(
+            SB1_data, SB1_gen, save_dir=Path(cfg.general.run_dir), tag="sb2to1", **pipeline_cwola_kwargs
+        )
+        log.info(f"[pipeline cwola] SB2toSB1 vs SB2 AUC={pipeline_auc_2to1}")
+        results["pipeline_sb2to1_AUC"] = pipeline_auc_2to1
+
+    if getattr(cfg.step_evaluate, "closure_pipeline_cwola_SBtoSR", False):
+        from skytransit.utils.cwola_utils import run_pipeline_cwola_folds
+
+        SR_data = data["target_data"].to_numpy()[:, :-1]
+        SB1toSR_gen = data["SB1toSR_gen_file"].to_numpy()[:, :-1]
+        SB2toSR_gen = data["SB2toSR_gen_file"].to_numpy()[:, :-1]
+
+        n_max = cfg.step_evaluate.get("n_max_class_train", 10000)
+        if n_max is not None and n_max > 0:
+            SR_data = SR_data[:n_max]
+            SB1toSR_gen = SB1toSR_gen[:n_max]
+            SB2toSR_gen = SB2toSR_gen[:n_max]
+
+        log.info("Starting pipeline-faithful CWoLa classifier train/eval")
+        pipeline_auc_SB1toSR, _, _ = run_pipeline_cwola_folds(
+            SB1toSR_gen, SR_data, save_dir=Path(cfg.general.run_dir), tag="sb1to2", **pipeline_cwola_kwargs
+        )
+        log.info(f"[pipeline cwola] SB1toSR vs SR AUC={pipeline_auc_SB1toSR}")
+        results["pipeline_sb1toSR_AUC"] = pipeline_auc_SB1toSR
+
+        pipeline_auc_SB2toSR, _, _ = run_pipeline_cwola_folds(
+            SB2toSR_gen, SR_data, save_dir=Path(cfg.general.run_dir), tag="sb2to1", **pipeline_cwola_kwargs
+        )
+        log.info(f"[pipeline cwola] SB2toSR vs SR AUC={pipeline_auc_SB2toSR}")
+        results["pipeline_sb2toSR_AUC"] = pipeline_auc_SB2toSR
+
+    if getattr(cfg.step_evaluate, "closure_pipeline_cwola_SBtoSR", False) and getattr(cfg.step_evaluate, "closure_pipeline_cwola_SBtoSB_transport", False):
+        pipeline_deb_score = (
+            (pipeline_auc_1to2 + pipeline_auc_2to1) * 2 + pipeline_auc_SB1toSR + pipeline_auc_SB2toSR
+        ) / 6
+        log.info(f"[pipeline cwola] deb_score={pipeline_deb_score}")
+        results["pipeline_deb_score"] = pipeline_deb_score
+
     if getattr(cfg.step_evaluate, "plot_everything_else", True):
         results = evaluate_model(cfg, data["original_data"], data["target_data"], data["template_file"], results=results)
-    
+
+    if getattr(cfg.step_evaluate, "draw_trajectories_on_demand", False):
+        log.info("Drawing event transport trajectories on demand")
+        traj_orig_cfg = reload_original_config(cfg.step_export_template, get_best=cfg.step_export_template.get_best)
+        traj_model_class = hydra.utils.get_class(traj_orig_cfg.model._target_)
+        traj_model = traj_model_class.load_from_checkpoint(traj_orig_cfg.ckpt_path, map_location="cpu")
+        traj_model.eval()
+
+        traj_datamodule = hydra.utils.instantiate(cfg.step_export_template.data)
+        traj_datamodule.setup(stage="test")
+        combined = np.asarray(traj_datamodule.test_dataset[:][0])
+        input_dim = traj_datamodule.input_dim
+        traj_w1 = torch.as_tensor(combined[:, :input_dim], dtype=torch.float32)
+        traj_m_pair = torch.as_tensor(combined[:, input_dim:], dtype=torch.float32)
+        var_names = traj_datamodule.input_features
+
+        for var in range(traj_w1.shape[1]):
+            with torch.no_grad():
+                img = traj_model._draw_event_transport_trajectories(
+                    traj_w1, traj_m_pair, var=var, var_name=var_names[var], masses="auto", max_traj=20
+                )
+            img_path = cfg.general.run_dir + f"/plots/event_transport_trajectories_{var_names[var]}.png"
+            img.save(img_path)
+            log.info(f"Saved event transport trajectory plot: {img_path}")
+            if wandb.run is not None:
+                wandb.run.log({f"eval_images/transport_trajectory_{var_names[var]}": wandb.Image(img)})
+            if comet_experiment is not None:
+                comet_experiment.log_image(img_path, name=f"eval_transport_trajectory_{var_names[var]}")
+
     #Write out results
     plot_path=cfg.general.run_dir+"/plots/"
     pickle.dump(results, open(plot_path+"results.pkl", "wb"))
@@ -287,6 +407,47 @@ def main(cfg):
             f.write(f"{key}: {value}\n")
     for key, value in results.items():
         print(key, value)
+
+    if comet_experiment is not None:
+        numeric_results = {}
+        for key, value in results.items():
+            try:
+                numeric_results[key] = float(value)
+            except (TypeError, ValueError):
+                continue
+
+        len_metrics = {k: v for k, v in numeric_results.items() if k.startswith("len_")}
+        pipeline_metrics = {k: v for k, v in numeric_results.items() if k.startswith("pipeline_")}
+        auc_metrics = {
+            k: v for k, v in numeric_results.items()
+            if (k.endswith("_AUC") or k == "deb_score") and k not in pipeline_metrics
+        }
+        other_metrics = {
+            k: v for k, v in numeric_results.items()
+            if k not in len_metrics and k not in pipeline_metrics and k not in auc_metrics
+        }
+
+        # "/" (not "_") is what makes Comet's Panels tab group these into their own
+        # section, the same way it already groups "train/...", "valid/..." etc.
+        dataset_sizes_metrics = {f"dataset_sizes/{k}": v for k, v in len_metrics.items()}
+        evaluation_metrics = {f"evaluation_metrics/{k}": v for k, v in auc_metrics.items()}
+        pipeline_evaluation_metrics = {
+            f"pipeline_evaluation_metrics/{k[len('pipeline_'):]}": v for k, v in pipeline_metrics.items()
+        }
+
+        if other_metrics:
+            comet_experiment.log_metrics(other_metrics)
+        if dataset_sizes_metrics:
+            comet_experiment.log_metrics(dataset_sizes_metrics)
+        if evaluation_metrics:
+            comet_experiment.log_metrics(evaluation_metrics)
+        if pipeline_evaluation_metrics:
+            comet_experiment.log_metrics(pipeline_evaluation_metrics)
+        log.info(
+            f"Logged {len(numeric_results)} evaluation metrics to comet "
+            f"({len(len_metrics)} under dataset_sizes, {len(auc_metrics)} under evaluation_metrics, "
+            f"{len(pipeline_metrics)} under pipeline_evaluation_metrics)"
+        )
 
 
 def plot_matrix(matrix, title, vmin=-1, vmax=1, abs=False):

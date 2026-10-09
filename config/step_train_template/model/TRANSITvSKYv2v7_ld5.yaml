@@ -6,7 +6,7 @@ defaults:
 network_type: partial_context
 _target_: transit.src.models.transit_model.TRANSIT
 use_m_encodig: True
-encoder_cfg: 
+encoder_cfg:
   _target_: transit.mattstools.mattstools.modules_myy.DenseNetwork
   _partial_: true
   act_h: silu
@@ -35,12 +35,20 @@ decoder_cfg:
   ctxt_in_hddn: True
   ctxt_in_out: False
 latent_norm: False
-latent_dim: 8
+latent_dim: 5
 loss_cfg:
   reco:
     w: 1
   consistency_x:
     w: 0.1
+  # Ported from transit's PAD2_experimental branch: penalise non-zero latent mean
+  # and non-unit latent variance. Weights match the values used consistently
+  # across PAD2_experimental's model configs (e.g. TRANSITpad3v2906v19.yaml).
+  latent_variance_cfg:
+    w: 0.02
+    pow: 1
+  latent_mean_cfg:
+    w: 0.02
 
 adversarial_cfg:
   mode: "double_discriminator_priority"
@@ -62,7 +70,7 @@ adversarial_cfg:
   train_dis_in_warmup: False
   g_loss_weight_in_warmup: False
   loss_function: "binary_cross_entropy"
-  scheduler: 
+  scheduler:
     scheduler_g:
       _target_: torch.optim.lr_scheduler.MultiStepLR
       _partial_: True

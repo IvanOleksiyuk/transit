@@ -171,16 +171,17 @@ class TRANSIT(LightningModule):
             self.pearson_loss = PearsonCorrelation()
 
         # For more stable checks in the shared step
-        expected_attrs = ["reco", 
-                        "consistency_x", 
-                        "consistency_xx", 
-                        "consistency_cont", 
-                        "latent_variance_cfg", 
-                        "l1_reg", 
-                        "DisCO_loss_cfg", 
-                        "pearson_loss_cfg", 
-                        "attractive", 
-                        "repulsive", 
+        expected_attrs = ["reco",
+                        "consistency_x",
+                        "consistency_xx",
+                        "consistency_cont",
+                        "latent_variance_cfg",
+                        "latent_mean_cfg",
+                        "l1_reg",
+                        "DisCO_loss_cfg",
+                        "pearson_loss_cfg",
+                        "attractive",
+                        "repulsive",
                         "second_derivative_smoothness"]
         for attr in list(self.loss_cfg.keys()):
             if attr in expected_attrs:
@@ -385,6 +386,15 @@ class TRANSIT(LightningModule):
                 total_loss += loss_latent_variance*self.loss_cfg.latent_variance_cfg.w
             self.log(f"{step_type}/variance_regularization", loss_latent_variance)
 
+        # mean loss (ported from transit's PAD2_experimental branch): penalises the
+        # per-component latent mean (across the batch) away from 0
+        if self.loss_cfg.latent_mean_cfg is not None:
+            mean = content.mean(dim=0)
+            loss_latent_mean = torch.mean(mean**2)
+            if self.loss_cfg.latent_mean_cfg.w is not None:
+                total_loss += loss_latent_mean*self.loss_cfg.latent_mean_cfg.w
+            self.log(f"{step_type}/mean_regularization", loss_latent_mean)
+
         # L1 regularization
         if self.loss_cfg.l1_reg is not None:
             all_params = torch.cat([x.view(-1) for x in self.parameters()])
@@ -569,13 +579,18 @@ class TRANSIT(LightningModule):
             total_loss = self._shared_step(sample, step_type="train", _batch_index=batch_idx)
             return total_loss
 
-    def _draw_event_transport_trajectories(self, w1_, m_pair_, var, var_name, masses=np.linspace(-2.5, 2.5, 126), max_traj=20):
+    def _draw_event_transport_trajectories(self, w1_, m_pair_, var, var_name, masses="auto", max_traj=20):
         w1 = copy.deepcopy(w1_)[:max_traj]
         m_pair = m_pair_[:max_traj]
         content = self.encode_content(w1, m_pair)
         recons = []
         if self.adversarial:
             zs = []
+        if isinstance(masses, str) and masses == "auto":
+            m_all = m_pair_.flatten().detach().cpu().numpy()
+            lo, hi = float(m_all.min()), float(m_all.max())
+            interval = hi - lo
+            masses = np.linspace(lo - interval / 10, hi + interval / 10, 126)
         for m in masses:
             w2 = torch.tensor(m).unsqueeze(0).expand(w1.shape[0], 1).float().to(w1.device)
             style = self.encode_style(w2)
@@ -592,11 +607,26 @@ class TRANSIT(LightningModule):
         plt.figure()
         if max_traj is None:
             max_traj = x.shape[0]
+        # If the model standardizes inputs/context internally, undo that for
+        # the plot so the axes show physical (already patch-normalized, but
+        # not additionally standardized) units rather than the model's own
+        # internal standardized scale.
+        if self.add_standardizing_layer:
+            masses_np = self.std_layer_ctxt.reverse(torch.tensor(masses).float().reshape(-1, 1).to(w1.device)).detach().cpu().numpy().reshape(-1)
+            m_pair_np = self.std_layer_ctxt.reverse(m_pair).detach().cpu().numpy()
+            w1_np = self.std_layer_x.reverse(w1).detach().cpu().numpy()
+        else:
+            masses_np = np.asarray(masses)
+            m_pair_np = to_np(m_pair)
+            w1_np = to_np(w1)
         for i in range(max_traj):
-            x=masses
-            y = np.array([float(recon[i, var].cpu().detach().numpy()) for recon in recons])
+            x = masses_np
+            if self.add_standardizing_layer:
+                y = np.array([float(self.std_layer_x.reverse(recon)[i, var].cpu().detach().numpy()) for recon in recons])
+            else:
+                y = np.array([float(recon[i, var].cpu().detach().numpy()) for recon in recons])
             if self.adversarial:
-                z = np.array([float(z[i].cpu().detach().numpy()) for z in zs])
+                z = np.array([z[i].detach().cpu().item() for z in zs])
                 plt.plot(x, y, "black", zorder=i*2+1)
                 plt.scatter(x, y, c=z, cmap="turbo", s=2, zorder=i*2+2, vmin=vmin, vmax=vmax)
                 if i==0:
@@ -605,7 +635,7 @@ class TRANSIT(LightningModule):
                 plt.plot(x, y, "r")
 
         for i in range(max_traj):
-            plt.scatter(to_np(m_pair)[:max_traj], to_np(w1[:, var])[:max_traj],  marker="x", label="originals", c="green")
+            plt.scatter(m_pair_np[:max_traj], w1_np[:max_traj, var],  marker="x", label="originals", c="green")
         plt.xlabel("mass")
         plt.ylabel(f"dim{var}")
         plt.title(f"Event transport for {var_name}, global step: {self.global_step}")
@@ -614,10 +644,10 @@ class TRANSIT(LightningModule):
         fig.tight_layout()
         fig.canvas.draw()
         img = PIL.Image.frombytes(
-            "RGB",
+            "RGBA",
             fig.canvas.get_width_height(),
-            fig.canvas.tostring_rgb(),
-        )
+            fig.canvas.buffer_rgba(),
+        ).convert("RGB")
         plt.close("all")
         return img
 
@@ -657,10 +687,10 @@ class TRANSIT(LightningModule):
         fig.tight_layout()
         fig.canvas.draw()
         img = PIL.Image.frombytes(
-            "RGB",
+            "RGBA",
             fig.canvas.get_width_height(),
-            fig.canvas.tostring_rgb(),
-        )
+            fig.canvas.buffer_rgba(),
+        ).convert("RGB")
         plt.close("all")
         return img
 
@@ -692,9 +722,16 @@ class TRANSIT(LightningModule):
             
         if batch_idx == 0 and self.valid_plots and self.current_epoch%self.valid_plot_freq==0:
             for var in range(w1.shape[1]):
-                image = wandb.Image(self._draw_event_transport_trajectories(w1, w2, var=var, var_name=self.var_group_list[0][var], max_traj=20))
+                img = self._draw_event_transport_trajectories(w1, w2, var=var, var_name=self.var_group_list[0][var], max_traj=20)
                 if wandb.run is not None:
-                    wandb.run.log({f"valid_images/transport_{self.var_group_list[0][var]}": image})
+                    wandb.run.log({f"valid_images/transport_{self.var_group_list[0][var]}": wandb.Image(img)})
+                for _logger in self.trainer.loggers:
+                    if _logger.__class__.__name__ == "CometLogger":
+                        _logger.experiment.log_image(
+                            img,
+                            name=f"valid_transport_{self.var_group_list[0][var]}",
+                            step=self.global_step,
+                        )
                 # image = wandb.Image(self._draw_event_transport_trajectories_2nd_der(sample[0], sample[1], var=var, var_name=self.var_group_list[0][var], max_traj=20))
                 # if wandb.run is not None:
                 #     wandb.run.log({f"valid_images/transport_2nd_der_{self.var_group_list[0][var]}": image})
