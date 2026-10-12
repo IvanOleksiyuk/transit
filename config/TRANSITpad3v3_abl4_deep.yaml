@@ -1,0 +1,58 @@
+# ---------------------------------------------------------------------------
+# ABLATION LADDER 3v3 -> 3v2906v13, rung 4: deeper network
+#
+# Cumulative rungs, each adding ONE of the five changes:
+#   1 latent regularisation  monitor-only adversary + SIGReg + rotated
+#                            latent-variance penalty          (model cfg)
+#   2 no input noise         input_noise_cfg: null             (model cfg)
+#   3 bigger/longer batches  bs 2048->4096, bpe 400->800       (THIS cfg)
+#   4 deeper network         3x2 -> 6x3 blocks, scale_residual (model cfg)
+#   5 dataloading            halfhalf -> binmix                (THIS cfg)
+# Rung 0 is TRANSITpad3v3.yaml, rung 5 is TRANSITpad3v2906v13.yaml -- both
+# already exist and are used unchanged, so only rungs 1-4 are defined here.
+#
+# THIS RUNG: last rung before the dataloader swap. Everything except the
+#            data module now matches TRANSITpad3v2906v13; the model config is
+#            byte-identical to that run's.
+# ---------------------------------------------------------------------------
+# @package _global_
+
+defaults:
+  - data: PAD_DEFAULT_halfhalf
+  - step_train_template: transitv_0v2
+  - step_export_template: transit
+  - step_evaluate: transit_PAD
+  - override /step_train_template/model: TRANSITpad3v3_abl4_deep.yaml
+  - _self_
+
+step_train_template:
+  project_name: pad_transit
+  do_scale_epochs: True
+  trainer:
+    check_val_every_n_epoch: 10
+  batches_per_epoch_desired: 800
+  model:
+    valid_plot_freq: 9
+  preprocessing_pkl: ${general.run_dir}/../data/data/preprocessor.pkl
+
+delete_existing_run_dir: False
+
+do_train_template: True
+do_export_template: True
+do_transport_sideband: False
+do_export_latent: False
+do_evaluation: False
+do_cwola: False
+do_evaluate_cwola: False
+do_plot_compare: False
+
+data:
+  training_batch_size: 4096
+
+verbose_validation: True
+
+general:
+  name: TRANSITpad3v3_abl4_deep
+  seed: 12345 # For reproducibility
+  run_dir: /transit #workspaces/${general.subfolder}${general.name}
+  do_dataset_plots: False

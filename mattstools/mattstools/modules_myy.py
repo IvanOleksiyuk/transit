@@ -195,6 +195,173 @@ class MLPBlock(nn.Module):
         return string
 
 
+class ShakeShakeMLPBlock(nn.Module):
+    """Residual MLP block with two parallel branches mixed by Shake-Shake.
+
+    Shake-Shake regularisation (Gastaldi, arXiv:1705.07485) replaces the plain
+    sum of parallel residual branches by a stochastic affine combination:
+
+        training:   x_{i+1} = x_i + a * F1(x_i) + (1 - a) * F2(x_i),   a ~ U(0, 1)
+        inference:  x_{i+1} = x_i + 0.5 * F1(x_i) + 0.5 * F2(x_i)
+
+    and, independently, rescales the two branch gradients in the backward pass
+    with a second random draw b ~ U(0, 1) ("Shake-Shake"). Per-sample
+    coefficients ("Image" level in the paper) are the default; the paper's best
+    models are Shake-Shake-Image (S-S-I).
+
+    forward_mode  : "shake" (a ~ U(0,1)) or "even" (a = 0.5)
+    backward_mode : "shake" (b ~ U(0,1)), "even" (b = 0.5) or "keep" (b = a)
+    level         : "image" (one coefficient per sample) or "batch" (one per batch)
+    per_step      : if True, the coefficients drawn on the first forward pass of a
+                    training step are reused by every further pass of that step
+                    (cached per batch size), until ``resample()`` is called --
+                    the owning LightningModule does that in on_train_batch_start.
+                    Needed when the loss compares several passes of the network
+                    (cycle consistency, parallelity/rotationality terms): with
+                    independent draws per pass those losses measure the shake
+                    noise instead of the model. Default False = paper behaviour,
+                    a fresh draw on every forward call.
+
+    Each branch is an ``MLPBlock`` with the same layout as a standard residual
+    block here (n_layers linear layers, context on the first, optional output
+    scaling), with its own residual connection switched off; the skip is added
+    once, after the mix. The backward rescaling uses the straight-through form
+    ``bwd + (fwd - bwd).detach()`` so the forward value is the a-mix while the
+    gradient flows through the b-mix.
+    """
+
+    def __init__(
+        self,
+        inpt_dim: int,
+        outp_dim: int,
+        hidden_dim: int | None = None,
+        ctxt_dim: int = 0,
+        n_layers: int = 1,
+        act: str = "silu",
+        nrm: str = "none",
+        drp: float = 0,
+        do_bayesian: bool = False,
+        init_zeros: bool = False,
+        use_bias: bool = True,
+        scale_output=None,
+        scale_residual=None,
+        forward_mode: str = "shake",
+        backward_mode: str = "shake",
+        level: str = "image",
+        per_step: bool = False,
+    ) -> None:
+        super().__init__()
+        if inpt_dim != outp_dim:
+            raise ValueError(
+                "ShakeShakeMLPBlock is a residual block: inpt_dim must equal outp_dim "
+                f"(got {inpt_dim} and {outp_dim})"
+            )
+        if forward_mode not in ("shake", "even"):
+            raise ValueError(f"unknown forward_mode {forward_mode!r}")
+        if backward_mode not in ("shake", "even", "keep"):
+            raise ValueError(f"unknown backward_mode {backward_mode!r}")
+        if level not in ("image", "batch"):
+            raise ValueError(f"unknown level {level!r}")
+
+        self.inpt_dim = inpt_dim
+        self.outp_dim = outp_dim
+        self.ctxt_dim = ctxt_dim
+        self.do_res = True
+        self.init_zeros = init_zeros
+        self.scale_residual = scale_residual
+        self.forward_mode = forward_mode
+        self.backward_mode = backward_mode
+        self.level = level
+        self.per_step = per_step
+        self._step_cache: dict = {}
+
+        branch_kwargs = dict(
+            inpt_dim=inpt_dim,
+            outp_dim=outp_dim,
+            hidden_dim=hidden_dim,
+            ctxt_dim=ctxt_dim,
+            n_layers=n_layers,
+            act=act,
+            nrm=nrm,
+            drp=drp,
+            do_res=False,
+            do_bayesian=do_bayesian,
+            init_zeros=init_zeros,
+            use_bias=use_bias,
+            scale_output=scale_output,
+            scale_residual=None,
+        )
+        self.branch1 = MLPBlock(**branch_kwargs)
+        self.branch2 = MLPBlock(**branch_kwargs)
+        if scale_residual:
+            self.scale_residual_block = Scaling(inpt_dim, init_value=1.0)
+
+    @property
+    def block(self) -> nn.ModuleList:
+        """Layers of the first branch, for code that introspects ``.block``."""
+        return self.branch1.block
+
+    def resample(self) -> None:
+        """Forget the cached per-step coefficients; the next pass draws new ones."""
+        self._step_cache = {}
+
+    def _draw(self, like: T.Tensor) -> tuple[T.Tensor, T.Tensor]:
+        """(alpha, beta) for this pass, from the per-step cache when enabled."""
+        key = like.shape[0]
+        if self.per_step and key in self._step_cache:
+            return self._step_cache[key]
+        alpha = self._coefficient(like, self.forward_mode)
+        if self.backward_mode == "keep":
+            beta = alpha
+        elif self.backward_mode == "even":
+            beta = self._coefficient(like, "even")
+        else:
+            beta = self._coefficient(like, "shake")
+        if self.per_step:
+            self._step_cache[key] = (alpha, beta)
+        return alpha, beta
+
+    def _coefficient(self, like: T.Tensor, mode: str) -> T.Tensor:
+        """A mixing coefficient shaped to broadcast over ``like``."""
+        if mode == "even":
+            return T.full((1,) * like.dim(), 0.5, device=like.device, dtype=like.dtype)
+        if self.level == "batch":
+            return T.rand((1,) * like.dim(), device=like.device, dtype=like.dtype)
+        shape = (like.shape[0],) + (1,) * (like.dim() - 1)
+        return T.rand(shape, device=like.device, dtype=like.dtype)
+
+    def forward(self, inpt: T.Tensor, ctxt: T.Tensor | None = None) -> T.Tensor:
+        f1 = self.branch1(inpt, ctxt)
+        f2 = self.branch2(inpt, ctxt)
+
+        if self.training:
+            alpha, beta = self._draw(f1)
+            fwd = alpha * f1 + (1 - alpha) * f2
+            if beta is alpha:
+                mix = fwd
+            else:
+                bwd = beta * f1 + (1 - beta) * f2
+                mix = bwd + (fwd - bwd).detach()
+        else:
+            mix = 0.5 * (f1 + f2)
+
+        if self.scale_residual:
+            skip = self.scale_residual_block(inpt)
+        else:
+            skip = inpt
+        return skip + mix
+
+    def __repr__(self) -> str:
+        return (
+            f"ShakeShake[{self.forward_mode}-{self.backward_mode}-{self.level}"
+            + ("-perstep" if self.per_step else "")
+            + "]("
+            + repr(self.branch1)
+            + " || "
+            + repr(self.branch2)
+            + ")(add)"
+        )
+
 class _HalfLinearHalfAct(nn.Module):
     """Applies identity to half the features and a chosen activation to the rest."""
 
@@ -356,6 +523,8 @@ class DenseNetwork(nn.Module):
         scale_output_hidden=None,
         unit_in_out_res: bool = False,
         scale_residual=None,
+        shake_shake: bool = False,
+        shake_shake_cfg: dict | None = None,
     ) -> None:
         """Initialise the DenseNetwork.
 
@@ -449,27 +618,34 @@ class DenseNetwork(nn.Module):
         )
 
         # All hidden blocks as a single module list
+        # Shake-Shake (arXiv:1705.07485): every hidden residual block becomes two
+        # parallel branches mixed by a random affine combination. Input and
+        # output blocks are untouched, they are not residual.
+        self.shake_shake = shake_shake
         self.hidden_blocks = []
         if self.num_blocks > 1:
             self.hidden_blocks = nn.ModuleList()
             for h_1, h_2 in zip(self.hddn_dim[:-1], self.hddn_dim[1:]):
-                self.hidden_blocks.append(
-                    MLPBlock(
-                        inpt_dim=h_1,
-                        outp_dim=h_2,
-                        ctxt_dim=self.ctxt_dim if ctxt_in_hddn else 0,
-                        n_layers=n_lyr_pbk,
-                        act=act_h,
-                        nrm=nrm,
-                        drp=drp,
-                        do_res=do_res,
-                        do_bayesian=do_bayesian,
-                        use_bias=use_bias,
-                        init_zeros=hddn_init_zeros,
-                        scale_output=scale_output_hidden,
-                        scale_residual=scale_residual
-                    )
+                hidden_kwargs = dict(
+                    inpt_dim=h_1,
+                    outp_dim=h_2,
+                    ctxt_dim=self.ctxt_dim if ctxt_in_hddn else 0,
+                    n_layers=n_lyr_pbk,
+                    act=act_h,
+                    nrm=nrm,
+                    drp=drp,
+                    do_bayesian=do_bayesian,
+                    use_bias=use_bias,
+                    init_zeros=hddn_init_zeros,
+                    scale_output=scale_output_hidden,
+                    scale_residual=scale_residual,
                 )
+                if shake_shake:
+                    self.hidden_blocks.append(
+                        ShakeShakeMLPBlock(**hidden_kwargs, **(shake_shake_cfg or {}))
+                    )
+                else:
+                    self.hidden_blocks.append(MLPBlock(**hidden_kwargs, do_res=do_res))
 
         # Output block
         if do_out:

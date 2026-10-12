@@ -2,6 +2,7 @@ import pyrootutils
 root = pyrootutils.setup_root(search_from=__file__, pythonpath=True, cwd=True, indicator=".project-root")
 
 # Some standard libraries
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 import PIL
@@ -16,6 +17,8 @@ from torch import nn
 import wandb
 import torch 
 from pytorch_lightning import LightningModule
+
+log = logging.getLogger(__name__)
 import torch.nn.functional as F
 from torch.nn.functional import normalize, mse_loss, cosine_similarity
 import torch.distributed as dist
@@ -26,6 +29,7 @@ from transit.src.models.pearson_correlation import PearsonCorrelation
 
 # Libraries
 from transit.mattstools.mattstools.simple_transformers import TransformerEncoder, FullEncoder, TransformerVectorEncoder
+from transit.mattstools.mattstools.torch_utils import LeakyELU
 from transit.mltools.modules import IterativeNormLayer
 from transit.mltools.torch_utils import get_sched, get_loss_fn
 from transit.mltools.mlp import MLP
@@ -209,7 +213,11 @@ class TRANSIT(LightningModule):
         true_trajectory_pickle_file = None, # Path to a pickle file containing a function that provides true trajectories
         do_switch_off_adversary_in_case_of_instability = False,
         ema_cfg: Mapping | None = None,
-        
+        # Which parameters the optimiser's weight decay is applied to:
+        # "all" (default, unchanged behaviour), "no_bias" (matrices only) or
+        # "pre_activation" (only Linear weights that feed an activation).
+        weight_decay_scope: str = "all",
+
     ) -> None:
         """
         Args:
@@ -351,6 +359,7 @@ class TRANSIT(LightningModule):
         else:
             assert False, "Unknown network type"
 
+        self.weight_decay_scope = weight_decay_scope
         self.add_standardizing_layer = add_standardizing_layer
         if add_standardizing_layer:
             self.std_layer_x = IterativeNormLayer(x_dim)
@@ -404,7 +413,8 @@ class TRANSIT(LightningModule):
                 "latent_covariance_cfg",
                 "decoder_jacobian_cfg",
                 "parallelity_loss_cfg",
-                "rot_loss_cfg"]
+                "rot_loss_cfg",
+                "transport_curvature_cfg"]
         for attr in list(self.loss_cfg.keys()):
             if attr in expected_attrs:
                 setattr(self.loss_cfg, attr, getattr(self.loss_cfg, attr, None))
@@ -762,6 +772,51 @@ class TRANSIT(LightningModule):
         return (skew.abs() / eps_scale).mean()
 
 
+    def transport_curvature_penalty(self, content, m_to, step, kappa_max, param_scale=1.0):
+        """Menger curvature of the transport curve, penalised above `kappa_max`.
+
+        The transported point x'(m') traces a curve through feature space as the
+        target mass varies. Sampling it at m' - step, m', m' + step and treating
+        the mass as an extra coordinate (scaled by `param_scale`), the curvature
+        of the three points is
+
+            kappa = 2 |bend_perp| / (|right| |chord|)
+
+        i.e. 4*Area/(|AB||BC||CA|), the discrete curvature of the extended curve.
+        Unlike a plain second derivative it is invariant to how fast the curve is
+        traversed, so it penalises BENDING rather than speed, and the relu
+        threshold leaves curves flatter than kappa_max untouched -- the transport
+        needs some curvature, only sharp turns are the target.
+        """
+        h = float(step) * float(param_scale)
+        # The three curve points in ONE encoder/decoder call on a 3x batch instead of
+        # three calls: the networks act per event (no batch norm), so the result is
+        # identical, with a third of the kernel launches -- which dominate the cost of
+        # a model this small.
+        n = content.shape[0]
+        styles = self.encode_style(torch.cat([m_to, m_to - step, m_to + step], dim=0))
+        points = self.decode(torch.cat([content, content, content], dim=0), styles)
+        y_0, y_minus, y_plus = points[:n], points[n:2 * n], points[2 * n:]
+
+        left = y_0 - y_minus
+        right = y_plus - y_0
+        bend = right - left
+
+        left2 = h**2 + left.square().sum(dim=-1, keepdim=True)
+        right2 = h**2 + right.square().sum(dim=-1, keepdim=True)
+        chord2 = (2 * h) ** 2 + (y_plus - y_minus).square().sum(dim=-1, keepdim=True)
+
+        # remove the part of the bend parallel to the first chord segment
+        projection = (left * bend).sum(dim=-1, keepdim=True) / left2
+        perpendicular2 = (
+            (h * projection).square()
+            + (bend - projection * left).square().sum(dim=-1, keepdim=True)
+        )
+
+        kappa2 = 4 * perpendicular2 / (right2 * chord2)
+        penalty = torch.relu(kappa2 - kappa_max**2).square().mean()
+        return penalty, kappa2.detach().sqrt()
+
     def decoder_smoothness_penalty(self, decoder, z, context, eps_scale=1e-2):
             """
             Finite-difference approximation of decoder Jacobian norm.
@@ -939,6 +994,22 @@ class TRANSIT(LightningModule):
                 total_loss += loss_decoder_jacobian * self.loss_cfg.decoder_jacobian_cfg.w
 
             self.log(f"{step_type}/decoder_jacobian_regularization", loss_decoder_jacobian)
+
+        if self.loss_cfg.transport_curvature_cfg is not None:
+            cfg = self.loss_cfg.transport_curvature_cfg
+            loss_curvature, kappa = self.transport_curvature_penalty(
+                content,
+                m_add,
+                step=cfg.step,
+                kappa_max=cfg.kappa_max,
+                param_scale=getattr(cfg, "param_scale", 1.0),
+            )
+            self.log(f"{step_type}/transport_curvature_loss", loss_curvature)
+            self.log(f"{step_type}/transport_curvature_median", kappa.median())
+            self.log(f"{step_type}/transport_curvature_frac_over_max",
+                     (kappa > cfg.kappa_max).float().mean())
+            if cfg.w is not None:
+                total_loss += loss_curvature * cfg.w
 
         if self.loss_cfg.parallelity_loss_cfg is not None:
             loss_parallelity = self.parralelity_loss(self.encoder1, self.decoder, x_inp, m_pair, eps_scale=self.loss_cfg.parallelity_loss_cfg.eps_scale)
@@ -1624,6 +1695,29 @@ class TRANSIT(LightningModule):
             elif hasattr(experiment, "log_image"):
                 experiment.log_image(image, name=key, step=self.global_step)
 
+    # Training metrics are logged per optimiser step (Lightning's default in
+    # training_step), which is what makes them a noise band on Comet even with
+    # "epoch" on the x-axis: the ~128 generator steps of an epoch all land on
+    # the same x. Validation metrics are epoch means (Lightning's default in
+    # validation_step), hence smooth. To compare like with like, every
+    # training metric is mirrored as "<name>_epoch", reduced by mean over the
+    # epoch and logged once at epoch end, alongside the untouched per-step one.
+    LOG_TRAIN_EPOCH_MEANS = True
+    _EPOCH_MEAN_SKIP = ("_debug/", "global_step", "dis_steps_per_gen")
+
+    def log(self, name, value, *args, **kwargs):
+        super().log(name, value, *args, **kwargs)
+        if (
+            self.LOG_TRAIN_EPOCH_MEANS
+            and self.training
+            and "on_epoch" not in kwargs
+            and not name.endswith("_epoch")
+            and not any(skip in name for skip in self._EPOCH_MEAN_SKIP)
+        ):
+            epoch_kwargs = dict(kwargs)
+            epoch_kwargs.update(on_step=False, on_epoch=True, prog_bar=False)
+            super().log(f"{name}_epoch", value, *args, **epoch_kwargs)
+
     def validation_step (self, sample: tuple, batch_idx: int) -> torch.Tensor:
         if not self.adversarial:
             total_loss = self._shared_step(sample, step_type="valid", _batch_index=batch_idx)
@@ -1711,6 +1805,13 @@ class TRANSIT(LightningModule):
             for step_type in ["train", "valid"]:
                 wandb.define_metric(f"{step_type}/total_loss", summary="min")
 
+    def on_train_batch_start(self, batch, batch_idx) -> None:
+        # Shake-Shake blocks with per_step=True reuse one draw of their mixing
+        # coefficients for every pass of a training step; start each step fresh.
+        for module in self.modules():
+            if hasattr(module, "resample") and hasattr(module, "_step_cache"):
+                module.resample()
+
     def on_train_batch_end(self, outputs, batch, batch_idx) -> None:
         if not self.use_ema:
             return
@@ -1755,6 +1856,77 @@ class TRANSIT(LightningModule):
         self._ema_shadow = ema_state.get("shadow", {})
         self._ema_num_updates = int(ema_state.get("num_updates", 0))
 
+    _ACTIVATIONS = (
+        nn.SiLU, nn.ReLU, nn.LeakyReLU, nn.GELU, nn.ELU, nn.SELU, nn.CELU, nn.Mish,
+        nn.Hardswish, nn.PReLU, nn.Softplus, nn.Tanh, nn.Sigmoid, LeakyELU,
+    )
+
+    @classmethod
+    def _pre_activation_weights(cls, module, prefix: str) -> set:
+        """Names of Linear weights whose output is fed straight into an activation.
+
+        Walks every container in execution order (MLPBlock keeps its layers in an
+        nn.ModuleList and applies them in sequence) and, for each Linear, looks
+        ahead until the next Linear: if an activation is met first, that Linear
+        feeds a nonlinearity. Output projections -- the last layer of a network
+        built with act_o: none -- are therefore not selected.
+        """
+        selected = set()
+        for parent_name, parent in module.named_modules():
+            children = list(parent.named_children())
+            for i, (name, child) in enumerate(children):
+                if not isinstance(child, nn.Linear):
+                    continue
+                for _, following in children[i + 1:]:
+                    if isinstance(following, nn.Linear):
+                        break
+                    if isinstance(following, cls._ACTIVATIONS):
+                        parts = [prefix, parent_name, name, "weight"]
+                        selected.add(".".join(p for p in parts if p))
+                        break
+        return selected
+
+    def _optimizer_params(self, modules):
+        """Parameter list or weight-decay groups, per `weight_decay_scope`.
+
+        `modules` is a list of (prefix, module) pairs.
+
+          "all"             one flat list -- AdamW decays every parameter it is
+                            given, including biases and normalisation scales.
+                            The default, identical to the previous behaviour.
+          "no_bias"         decay every matrix; biases and 1-d parameters go in a
+                            weight_decay = 0 group.
+          "pre_activation"  decay ONLY the weights of Linear layers that feed an
+                            activation, so the penalty acts on where the
+                            nonlinearity sits rather than on the overall output
+                            scale. Everything else is left undecayed.
+        """
+        named = []
+        pre_activation = set()
+        for prefix, module in modules:
+            named += [(n, p) for n, p in module.named_parameters(prefix=prefix) if p.requires_grad]
+            pre_activation |= self._pre_activation_weights(module, prefix)
+
+        scope = getattr(self, "weight_decay_scope", "all")
+        if scope == "all":
+            return [p for _, p in named]
+        if scope == "no_bias":
+            keep = [(n, p) for n, p in named if p.ndim > 1 and not n.endswith(".bias")]
+        elif scope == "pre_activation":
+            keep = [(n, p) for n, p in named if n in pre_activation]
+        else:
+            raise ValueError(f"unknown weight_decay_scope {scope!r}")
+
+        keep_ids = {id(p) for _, p in keep}
+        decay = [p for _, p in keep]
+        no_decay = [p for _, p in named if id(p) not in keep_ids]
+        log.info(
+            f"weight_decay_scope={scope}: decaying {len(decay)} tensors "
+            f"({sum(p.numel() for p in decay)} parameters), leaving {len(no_decay)} tensors "
+            f"({sum(p.numel() for p in no_decay)} parameters) undecayed"
+        )
+        return [{"params": decay}, {"params": no_decay, "weight_decay": 0.0}]
+
     def configure_optimizers(self) -> dict:
         """Configure the optimisers and learning rate sheduler for this
         model."""
@@ -1782,8 +1954,12 @@ class TRANSIT(LightningModule):
             else:
                 enc2_params = []
             enc_dec_params = list(self.encoder1.parameters()) + enc2_params + list(self.decoder.parameters())
+            enc_dec_modules = [("encoder1", self.encoder1)]
+            if hasattr(self, "encoder2") and hasattr(self.encoder2, "named_parameters"):
+                enc_dec_modules.append(("encoder2", self.encoder2))
+            enc_dec_modules.append(("decoder", self.decoder))
             optimisers, schedulers = [], []
-            opt_g= self.hparams.optimizer(params=enc_dec_params)
+            opt_g= self.hparams.optimizer(params=self._optimizer_params(enc_dec_modules))
             optimisers.append(opt_g)
             if self.use_disc_lat: 
                 opt_d = self.hparams.optimizer(params=self.discriminator.parameters())

@@ -29,3 +29,17 @@ classifier_for_test: DEFAULT
 
 procedures: null
 n_max_class_train: 10000
+
+# Offline memorisation test on the final (EMA) checkpoint, written to
+# evaluation_results.json under "memorisation". Same metric as the training-time
+# MemorisationMonitor callback, with more probes. enabled: false to skip.
+memorisation:
+  enabled: true
+  n_probe_per_group: 20000
+  n_reference: 300000
+  k: 50
+  n_quantiles: 10
+  n_mass_bins: 10
+  eps_scale: 0.01
+  seed: 0
+

@@ -1,0 +1,5 @@
+# 2x AdamW_lr2-4.yaml, for the v13 learning-rate variant (2026-09-19).
+_target_: torch.optim.AdamW
+_partial_: true
+lr: 4.0e-4
+weight_decay: 0

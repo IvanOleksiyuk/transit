@@ -500,6 +500,42 @@ def main(cfg):
             )
         log.info("Latent covariance matrix plots done")
 
+    # --- Memorisation test (held-out vs train per-event error by local density) --
+    # Needs the trained model and the training datamodule (for the exact split
+    # the model was trained on), which the rest of this script does not load.
+    memo_cfg = cfg.step_evaluate.get("memorisation", None)
+    if memo_cfg is not None and memo_cfg.get("enabled", True):
+        try:
+            from transit.src.utils.memorisation import run_memorisation_test
+
+            log.info("Memorisation test: loading model and training datamodule")
+            train_cfg = cfg.step_train_template
+            model_class = hydra.utils.get_class(train_cfg.model._target_)
+            ckpt_path = Path(cfg.general.run_dir) / "template" / "checkpoints" / "last.ckpt"
+            memo_model = model_class.load_from_checkpoint(
+                ckpt_path, map_location="cpu", weights_only=False
+            )
+            memo_model.eval()
+            # the weights the template was generated with
+            if getattr(memo_model, "use_ema", False):
+                memo_model._ema_apply_eval_weights()
+            memo_dm = hydra.utils.instantiate(train_cfg.data.datamodule)
+            if hasattr(memo_dm, "setup"):
+                memo_dm.setup("fit")
+            memo_kwargs = {k: v for k, v in memo_cfg.items() if k != "enabled"}
+            results["memorisation"] = run_memorisation_test(memo_model, memo_dm, **memo_kwargs)
+            summary = {
+                k: round(v, 3)
+                for k, v in results["memorisation"].items()
+                if k.endswith("sparse_over_dense")
+            }
+            log.info(f"Memorisation test done: {summary}")
+            wandb_log(results["memorisation"])
+            del memo_model, memo_dm
+        except Exception as err:  # the evaluation must not die on a diagnostic
+            log.error(f"Memorisation test failed: {err!r}")
+            results["memorisation"] = None
+
     jsonpickle_file = Path(cfg.general.run_dir) / "evaluation_results.json"
     with open(jsonpickle_file, "wb") as f:
         frozen = jsonpickle.encode(results)

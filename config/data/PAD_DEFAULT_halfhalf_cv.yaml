@@ -1,0 +1,56 @@
+# PAD_DEFAULT_halfhalf with a deterministic k-fold train/valid split instead of the
+# random train_frac one: 5-fold cross-validated TRANSIT through the global seeds.
+#
+# Every SB event gets a fold index from a hash of its raw m_jj and y_star
+# (src.data.process.event_fold, identical in every gseed because the gseed only
+# reorders the same events in no-signal runs). A training holds out fold
+# `cv_val_fold` as its validation split (ProcessorFoldSplitFlags writes the
+# `split/is_train` flags that Dataset.split uses), so gseeds 1..5 with
+# cv_val_fold = gseed % 5 together hold out every SB event exactly once.
+#
+# cv_val_fold has no default on purpose: the workflow sets it per run
+# (++data.cv_val_fold=..., key `transit_cv_folds` in the workflow config).
+# Only the SB feature datasets (dataset1 of train_data_a / train_data_b) are split;
+# the mass_add datasets carry target masses only, no event features.
+defaults:
+  - PAD_DEFAULT_halfhalf
+  - _self_
+
+cv_n_folds: 5
+cv_val_fold: ???
+
+template_training:
+  train_data_a:
+    dataset1:
+      processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 1000
+        - _target_: src.data.process.ProcessorSelectSidebands
+          mode: "SB1"
+          SB1SRSB2_edges: ${data.SB1SRSB2_edges}
+          scalar_df_name: "orig"
+          var_name: "m_jj"
+        - _target_: src.data.process.ProcessorFoldSplitFlags
+          n_folds: ${data.cv_n_folds}
+          val_fold: ${data.cv_val_fold}
+          scalar_df_name: "orig"
+        - _target_: src.data.process.ProcessorKeepFrames
+          frame_names_to_keep: ["data", "cond", "split"]
+  train_data_b:
+    dataset1:
+      processor_cfg:
+        - _target_: src.data.process.ProcessorShuffle
+          random_state: ${general.seed}
+          add_seed: 1000
+        - _target_: src.data.process.ProcessorSelectSidebands
+          mode: "SB2"
+          SB1SRSB2_edges: ${data.SB1SRSB2_edges}
+          scalar_df_name: "orig"
+          var_name: "m_jj"
+        - _target_: src.data.process.ProcessorFoldSplitFlags
+          n_folds: ${data.cv_n_folds}
+          val_fold: ${data.cv_val_fold}
+          scalar_df_name: "orig"
+        - _target_: src.data.process.ProcessorKeepFrames
+          frame_names_to_keep: ["data", "cond", "split"]

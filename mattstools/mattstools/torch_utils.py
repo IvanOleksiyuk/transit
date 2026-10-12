@@ -114,6 +114,32 @@ class MixedActivation(nn.Module):
     def forward(self, x: T.Tensor) -> T.Tensor:
         return T.cat([self.act[0](x[..., ::2]), self.act[1](x[..., 1::2])], dim=-1)
 
+class LeakyELU(nn.Module):
+    """ELU whose negative branch keeps a small slope instead of saturating.
+
+        f(x) = x                                                   x > 0
+        f(x) = negative_slope * x + (1 - negative_slope) * (e^x - 1)   x <= 0
+
+    For x -> +inf it is the identity, for x -> -inf it approaches negative_slope * x
+    (plus a constant offset of -(1 - negative_slope)), like a leaky ReLU, and near 0 it
+    bends smoothly like an ELU. The ELU part is weighted by (1 - negative_slope) so the
+    slope at 0 is exactly 1 from both sides: f is continuous with a continuous first
+    derivative (C1), unlike a leaky ReLU.
+    """
+
+    def __init__(self, negative_slope: float = 0.1) -> None:
+        super().__init__()
+        self.negative_slope = negative_slope
+
+    def forward(self, x: T.Tensor) -> T.Tensor:
+        # clamp before expm1 so large positive inputs cannot overflow in the unused branch
+        neg = self.negative_slope * x + (1.0 - self.negative_slope) * T.expm1(T.clamp(x, max=0.0))
+        return T.where(x > 0, x, neg)
+
+    def extra_repr(self) -> str:
+        return f"negative_slope={self.negative_slope}"
+
+
 def get_act(name: str) -> nn.Module:
     """Return a pytorch activation function given a name."""
     if isinstance(name, partial):
@@ -128,6 +154,8 @@ def get_act(name: str) -> nn.Module:
         return nn.PReLU(0.1)
     if name == "silu" or name == "swish":
         return nn.SiLU()
+    if name == "lelu" or name == "leaky_elu":
+        return LeakyELU(0.1)
     if name == "selu":
         return nn.SELU()
     if name == "softmax":

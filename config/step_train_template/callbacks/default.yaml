@@ -10,3 +10,26 @@ model_summary:
 lr_monitor:
   _target_: pytorch_lightning.callbacks.LearningRateMonitor
   logging_interval: step
+
+# Memorisation monitor (transit/src/utils/memorisation.py): held-out vs train
+# per-event errors (reco, cycle, parallelity, rotationality) stratified by local
+# training-data density, evaluated on fixed probe sets at every validation and
+# logged as memo/<error>/<lowSB|highSB>/gap_q<i> (+ medians, sparse_over_dense).
+# gap ~ 1 everywhere = no memorisation; gap >> 1 in the sparse strata = the
+# model fits isolated training points. Cost: one forward pass over ~40k probe
+# events per validation (~1 s) plus a one-off ~30 s probe-set build, i.e.
+# ~6 min over a full 3333-epoch run (333 validations).
+# OFF by default since 2026-09-30 (the 2026-09-21 study is done, production runs do
+# not need it). To switch it on for a run:
+#   step_train_template.callbacks.memorisation_monitor.enabled=true
+# (e.g. through transit_train_mods in the workflow config).
+memorisation_monitor:
+  _target_: transit.src.utils.memorisation.MemorisationMonitor
+  enabled: false
+  n_probe_per_group: 10000    # per sideband and per split (train / held-out)
+  n_reference: 200000         # training events the k-NN density is measured against
+  k: 50
+  n_quantiles: 5
+  n_mass_bins: 10             # probes drawn uniformly in mass within each sideband
+  eps_scale: 0.01             # as rot_loss_cfg.eps_scale
+  every_n_validations: 1
