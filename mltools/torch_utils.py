@@ -148,6 +148,11 @@ def get_act(name: str) -> nn.Module:
         return nn.Identity()
     if name == "prelu":
         return nn.PReLU()
+    if name == "lelu" or name == "leaky_elu":
+        # the leaky ELU of the TRANSIT encoder/decoder (2026-10-05), defined once in mattstools
+        from transit.mattstools.mattstools.torch_utils import LeakyELU
+
+        return LeakyELU()
     raise ValueError("No activation function with name: ", name)
 
 
