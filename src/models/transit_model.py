@@ -217,6 +217,10 @@ class TRANSIT(LightningModule):
         # "all" (default, unchanged behaviour), "no_bias" (matrices only) or
         # "pre_activation" (only Linear weights that feed an activation).
         weight_decay_scope: str = "all",
+        # Spectral normalisation (torch parametrisation, one power iteration per training forward) of every
+        # nn.Linear in the selected networks, e.g. {encoder: True, decoder: True, discriminator: True}.
+        # "discriminator" covers both the latent and the reconstruction discriminator. None = off.
+        spectral_norm_cfg: Mapping | None = None,
 
     ) -> None:
         """
@@ -358,6 +362,8 @@ class TRANSIT(LightningModule):
             self.encoder2 = lambda x: x
         else:
             assert False, "Unknown network type"
+
+        self._apply_spectral_norm(spectral_norm_cfg)
 
         self.weight_decay_scope = weight_decay_scope
         self.add_standardizing_layer = add_standardizing_layer
@@ -519,6 +525,30 @@ class TRANSIT(LightningModule):
             return tensors if len(tensors) > 1 else tensors[0]
         noisy = [t + torch.randn_like(t) * self.disc_input_noise_std for t in tensors]
         return noisy if len(noisy) > 1 else noisy[0]
+
+    def _apply_spectral_norm(self, spectral_norm_cfg):
+        """Wrap every nn.Linear of the selected networks in a spectral-norm parametrisation."""
+        if not spectral_norm_cfg:
+            return
+        networks = {
+            "encoder": ["encoder1"],
+            "decoder": ["decoder"],
+            "discriminator": ["discriminator", "discriminator2"],
+        }
+        for key in spectral_norm_cfg:
+            if key not in networks:
+                raise ValueError(f"unknown spectral_norm_cfg key {key!r}, expected one of {list(networks)}")
+        for key, attrs in networks.items():
+            if not spectral_norm_cfg.get(key, False):
+                continue
+            for attr in attrs:
+                module = getattr(self, attr, None)
+                if not isinstance(module, nn.Module):
+                    continue
+                linears = [m for m in module.modules() if isinstance(m, nn.Linear)]
+                for linear in linears:
+                    nn.utils.parametrizations.spectral_norm(linear)
+                log.info(f"Spectral norm applied to {len(linears)} linear layers of {attr}")
 
     def _ema_named_parameters(self):
         modules = [("encoder1", self.encoder1), ("decoder", self.decoder)]

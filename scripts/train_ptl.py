@@ -265,6 +265,13 @@ def main(cfg: DictConfig) -> None:
         with open(cfg.preprocessing_pkl, "rb") as f:
             preprocessor = pickle.load(f)
             standardiser = preprocessor.features_preprocess.info
+            # PileupPreprocess wraps the Standardise step in a CompositePreprocess, whose own info is a
+            # placeholder: take the (mean; std) rows from the standardising step inside it
+            if not (T.is_tensor(standardiser) and standardiser.dim() == 2):
+                for transformer in getattr(preprocessor.features_preprocess, "transfomer_list", []):
+                    info = getattr(transformer, "info", None)
+                    if T.is_tensor(info) and info.dim() == 2:
+                        standardiser = info
             if hasattr(preprocessor, "discrete_indices") and preprocessor.discrete_indices is not None:
                 discrete_indices = preprocessor.discrete_indices
                 dequantization_cfg = {}
