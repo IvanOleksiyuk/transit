@@ -33,3 +33,29 @@ memorisation_monitor:
   n_mass_bins: 10             # probes drawn uniformly in mass within each sideband
   eps_scale: 0.01             # as rot_loss_cfg.eps_scale
   every_n_validations: 1
+
+# Early stopping on the reconstruction discriminator's validation loss (transit/src/models/callbacks.py,
+# 2026-10-29): stop once valid\d_loss_gen stayed above `threshold` for `patience` consecutive validations, never before
+# `min_steps`. The discriminator's validation loss rises above ln 2 = 0.6931 when it memorises its training events
+# (mock blank-data study: final valid 0.6935 in 69-214 up to 0.6979 in 112-309). OFF by default; to switch it on:
+#   step_train_template.callbacks.dloss_early_stopping.enabled=true   (e.g. through transit_train_mods)
+dloss_early_stopping:
+  _target_: transit.src.models.callbacks.ThresholdEarlyStopping
+  monitor: "valid\\d_loss_gen"
+  threshold: 0.6950
+  min_steps: 10000
+  patience: 5
+  enabled: false
+
+# Early stopping on the reconstruction discriminator's validation - training gap (transit/src/models/callbacks.py,
+# 2026-10-29): stop once the smoothed gap valid\d_loss_gen - d_loss_gen stayed above `threshold` for `patience`
+# consecutive validations, never before `min_batches` training batches. OFF by default; ON in TRANSITpad3v6.
+dloss_gap_early_stopping:
+  _target_: transit.src.models.callbacks.DLossGapEarlyStopping
+  valid_metric: "valid\\d_loss_gen"
+  train_metric: "d_loss_gen"
+  threshold: 0.003
+  min_batches: 20000
+  patience: 5
+  smooth: 5
+  enabled: false

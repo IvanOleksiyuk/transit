@@ -1,0 +1,49 @@
+# @package _global_
+
+defaults:
+  - data: PAD_DEFAULT_halfhalf
+  - step_train_template: transitv_0v2
+  - step_export_template: transit
+  - step_evaluate: transit_PAD
+  - override /step_train_template/model: TRANSITpad3v4_w256d01.yaml
+  - _self_
+
+step_train_template:
+  project_name: pad_transit
+  # TRANSITpad3v6_w256d01 (2026-10-30): TRANSITpad3v6 with model TRANSITpad3v4_w256d01 (width 256, StepDropout
+  # 0.1). Early stopping as in 3v6 (the training d_loss_gen is computed with dropout on, so the gap is not
+  # strictly comparable with 3v6). 3v6: TRANSITpad3v4 + early stopping on the discriminator's validation -
+  # training gap: smoothed gap > 0.003 for 5 validations, not before 20k training batches
+  callbacks:
+    dloss_gap_early_stopping:
+      enabled: true
+  do_scale_epochs: True
+  trainer:
+    check_val_every_n_epoch: 10
+  batches_per_epoch_desired: 400
+  model:
+    valid_plot_freq: 9
+  preprocessing_pkl: ${general.run_dir}/../data/data/preprocessor.pkl
+
+delete_existing_run_dir: False
+
+do_train_template: True
+do_export_template: True
+do_transport_sideband: False
+do_export_latent: False
+do_evaluation: False
+do_cwola: False
+do_evaluate_cwola: False
+do_plot_compare: False
+
+data:
+  training_batch_size: 2048
+
+verbose_validation: True
+
+general:
+  name: TRANSITpad3v6_w256d01
+  seed: 12345 # For reproducibility
+  run_dir: /transit #workspaces/${general.subfolder}${general.name}
+  do_dataset_plots: False
+  

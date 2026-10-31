@@ -94,6 +94,7 @@ ema_cfg:
   enabled: True
   decay: 0.98
   update_every: 1
+  device: model  # model = keep the EMA on the training device (2026-10-29); cpu = offload to host RAM
 
 input_noise_cfg:
   noise_std: 0.1
@@ -102,3 +103,6 @@ valid_plots: ${verbose_validation}
 add_standardizing_layer: True
 reverse_pass_mode: additional_input
 afterglow_epoch: 999999999
+
+# training mass-debug metrics every N global steps (0 = off), 2026-10-29
+mass_debug_log_every_n_steps: 100

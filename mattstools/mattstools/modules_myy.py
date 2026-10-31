@@ -30,6 +30,46 @@ class Scaling(nn.Module):
     def forward(self, x: T.Tensor) -> T.Tensor:
         return x * self.weight
 
+
+class StepDropout(nn.Module):
+    """Dropout with one feature mask per training step (2026-10-30).
+
+    The mask is drawn on the first training pass after ``resample()`` and reused
+    by every further pass until the next ``resample()`` (the owning
+    LightningModule calls it in on_train_batch_start, as for the per-step
+    Shake-Shake blocks). It has one entry per feature and is shared by all
+    samples, so each step trains one random sub-network, independent of the
+    batch size and order of a pass. TRANSIT's losses compare several passes of
+    the network in a step (cycle consistency, parallelity / rotationality at x
+    and x + eps, the m +- step passes on concatenated batches); with a fresh
+    nn.Dropout mask per pass those terms would measure the dropout noise.
+    Inverted scaling 1 / (1 - p) in training, identity in eval mode.
+    """
+
+    def __init__(self, p: float) -> None:
+        super().__init__()
+        if not 0.0 <= p < 1.0:
+            raise ValueError(f"StepDropout probability must be in [0, 1), got {p}")
+        self.p = p
+        self._step_cache: dict = {}
+
+    def resample(self) -> None:
+        """Forget the cached mask; the next training pass draws a new one."""
+        self._step_cache = {}
+
+    def forward(self, x: T.Tensor) -> T.Tensor:
+        if not self.training or self.p == 0.0:
+            return x
+        key = (x.shape[-1], x.device, x.dtype)
+        if key not in self._step_cache:
+            keep = T.rand(x.shape[-1], device=x.device) >= self.p
+            self._step_cache[key] = keep.to(x.dtype) / (1.0 - self.p)
+        return x * self._step_cache[key]
+
+    def extra_repr(self) -> str:
+        return f"p={self.p}, per_step=True"
+
+
 class MLPBlock(nn.Module):
     """A simple MLP block that makes up a dense network.
 
@@ -59,6 +99,7 @@ class MLPBlock(nn.Module):
         use_bias: bool = True,
         scale_output = None,
         scale_residual = None,
+        drp_per_step: bool = False,
     ) -> None:
         """Init method for MLPBlock.
 
@@ -140,9 +181,12 @@ class MLPBlock(nn.Module):
             if scale_residual and do_res:
                 self.scale_residual_block = Scaling(inpt_dim, init_value=1.0)
 
-            # Add the dropout layer
+            # Add the dropout layer (StepDropout: one mask per training step, see its docstring)
             if drp > 0:
-                self.block.append(nn.Dropout(drp))
+                if drp_per_step:
+                    self.block.append(StepDropout(drp))
+                else:
+                    self.block.append(nn.Dropout(drp))
 
     def forward(self, inpt: T.Tensor, ctxt: T.Tensor | None = None) -> T.Tensor:
         """
@@ -510,6 +554,7 @@ class DenseNetwork(nn.Module):
         nrm: str = "none",
         drp: float = 0,
         drp_on_output: bool = False,
+        drp_per_step: bool = False,
         nrm_on_output: bool = False,
         do_res: bool = False,
         ctxt_in_inpt: bool = True,
@@ -556,6 +601,10 @@ class DenseNetwork(nn.Module):
             Type of normalisation (layer or batch) in each hidden block, by default "none"
         drp : float, optional
             Dropout probability for hidden layers (0 means no dropout), by default 0
+        drp_per_step : bool, optional
+            Use StepDropout (one feature mask per training step, shared by all passes
+            of the step) instead of nn.Dropout in the input and plain hidden blocks,
+            by default False
         do_res : bool, optional
             Use resisdual-connections between hidden blocks (only if same size),
             by default False
@@ -614,7 +663,8 @@ class DenseNetwork(nn.Module):
             do_bayesian=do_bayesian,
             use_bias=use_bias,
             do_res=do_res,
-            scale_residual=scale_residual
+            scale_residual=scale_residual,
+            drp_per_step=drp_per_step,
         )
 
         # All hidden blocks as a single module list
@@ -645,7 +695,9 @@ class DenseNetwork(nn.Module):
                         ShakeShakeMLPBlock(**hidden_kwargs, **(shake_shake_cfg or {}))
                     )
                 else:
-                    self.hidden_blocks.append(MLPBlock(**hidden_kwargs, do_res=do_res))
+                    self.hidden_blocks.append(
+                        MLPBlock(**hidden_kwargs, do_res=do_res, drp_per_step=drp_per_step)
+                    )
 
         # Output block
         if do_out:

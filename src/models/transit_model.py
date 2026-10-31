@@ -221,6 +221,10 @@ class TRANSIT(LightningModule):
         # nn.Linear in the selected networks, e.g. {encoder: True, decoder: True, discriminator: True}.
         # "discriminator" covers both the latent and the reconstruction discriminator. None = off.
         spectral_norm_cfg: Mapping | None = None,
+        # Cadence (Lightning global steps) of the two mass-fraction debug metrics m_pair / m_add > 0.5 in training;
+        # 0 = off, 1 = every step (the old behaviour, which also forced a GPU sync per step). Validation logs them
+        # every time unless 0. 2026-10-29, user/training_speed_porting.md section 2.
+        mass_debug_log_every_n_steps: int = 100,
 
     ) -> None:
         """
@@ -251,6 +255,15 @@ class TRANSIT(LightningModule):
         self.ema_start_step = max(0, int(self._cfg_get(self.ema_cfg, "start_step", 0)))
         self.ema_use_in_eval = bool(self._cfg_get(self.ema_cfg, "use_in_eval", True))
         self.ema_include_encoder2 = bool(self._cfg_get(self.ema_cfg, "include_encoder2", True))
+        # EMA shadow location (2026-10-29, user/training_speed_porting.md section 1): "model" follows each parameter's
+        # device (GPU during GPU training, no per-update GPU -> CPU copies); "cpu" offloads it to host RAM (the old
+        # behaviour). Missing key, e.g. older configs / checkpoints: "model".
+        self.ema_device = str(self._cfg_get(self.ema_cfg, "device", "model")).lower()
+        if self.ema_device not in ("model", "cpu"):
+            raise ValueError("ema_cfg.device must be 'model' (follow the model device) or 'cpu'")
+        if int(mass_debug_log_every_n_steps) < 0:
+            raise ValueError("mass_debug_log_every_n_steps must be >= 0")
+        self.mass_debug_log_every_n_steps = int(mass_debug_log_every_n_steps)
         self._ema_shadow = {}
         self._ema_backup = None
         self._ema_num_updates = 0
@@ -562,9 +575,14 @@ class TRANSIT(LightningModule):
                 if param.requires_grad:
                     yield f"{module_name}.{param_name}", param
 
+    def _ema_target_device(self, param):
+        if self.ema_device == "cpu":
+            return torch.device("cpu")
+        return param.device
+
     def _init_ema_state(self):
         self._ema_shadow = {
-            name: param.detach().float().cpu().clone()
+            name: param.detach().to(device=self._ema_target_device(param), dtype=torch.float32).clone()
             for name, param in self._ema_named_parameters()
         }
 
@@ -578,13 +596,17 @@ class TRANSIT(LightningModule):
 
         one_minus_decay = 1.0 - self.ema_decay
         for name, param in self._ema_named_parameters():
+            target = self._ema_target_device(param)
+            current = param.detach().to(device=target, dtype=torch.float32)
             shadow = self._ema_shadow.get(name, None)
-            target_device = shadow.device if shadow is not None else torch.device("cpu")
-            current = param.detach().to(device=target_device, dtype=torch.float32)
-            if name not in self._ema_shadow:
+            if shadow is None:
                 self._ema_shadow[name] = current.clone()
                 continue
-            self._ema_shadow[name].mul_(self.ema_decay).add_(current, alpha=one_minus_decay)
+            if shadow.device != target or shadow.dtype != torch.float32:
+                # one-off migration, e.g. a CPU shadow restored from a checkpoint before the model moved to the GPU
+                shadow = shadow.to(device=target, dtype=torch.float32)
+                self._ema_shadow[name] = shadow
+            shadow.mul_(self.ema_decay).add_(current, alpha=one_minus_decay)
         self._ema_num_updates += 1
 
     @torch.no_grad()
@@ -600,7 +622,10 @@ class TRANSIT(LightningModule):
         for name, param in self._ema_named_parameters():
             if name not in self._ema_shadow:
                 continue
-            self._ema_backup[name] = param.detach().clone()
+            if self.ema_device == "cpu":
+                self._ema_backup[name] = param.detach().to("cpu").clone()
+            else:
+                self._ema_backup[name] = param.detach().clone()
             param.copy_(self._ema_shadow[name].to(device=param.device, dtype=param.dtype))
         self._ema_eval_active = True
 
@@ -614,7 +639,7 @@ class TRANSIT(LightningModule):
 
         for name, param in self._ema_named_parameters():
             if name in self._ema_backup:
-                param.copy_(self._ema_backup[name])
+                param.copy_(self._ema_backup[name].to(device=param.device, dtype=param.dtype))
         self._ema_backup = None
         self._ema_eval_active = False
 
@@ -881,8 +906,11 @@ class TRANSIT(LightningModule):
         
         # DELETE THIS, just for debugging to check the mass values are in the right range and not all smaller than 0.5 for example
         self.log(f"{step_type}_debug/batch_size", batch_size)
-        self.log(f"{step_type}_debug/m_pair_larger0.5", ( (m_pair>0.5).sum()/m_pair.numel() ).item())
-        self.log(f"{step_type}_debug/m_add_larger0.5", ( (m_add>0.5).sum()/m_add.numel() ).item())
+        interval = self.mass_debug_log_every_n_steps
+        if interval and (step_type != "train" or self.global_step % interval == 0):
+            # no .item(): no forced GPU -> host sync for these diagnostics
+            self.log(f"{step_type}_debug/m_pair_larger0.5", (m_pair > 0.5).float().mean().detach())
+            self.log(f"{step_type}_debug/m_add_larger0.5", (m_add > 0.5).float().mean().detach())
 
         if self.do_dequantization:
             x_inp = self.dequantization_layer(x_inp)
@@ -1444,7 +1472,22 @@ class TRANSIT(LightningModule):
                     self.toggle_optimizer(optimizer_d2)
                     self.log("d_loss_gen", d_loss_gen, prog_bar=True)
                     self.zero_grad()
-                    self.manual_backward(d_loss_gen, retain_graph=True)
+                    d_loss_gen_total = d_loss_gen
+                    # R1 gradient penalty on the real events (2026-10-29, adversarial_cfg.r1_gamma, 0 = off):
+                    # gamma / 2 * E_real ||grad_x logit D(x, m)||^2 penalises sharp peaks of the discriminator around
+                    # individual training events (memorisation) without reducing its capacity. Only the discriminator
+                    # update sees it; the logged d_loss_gen stays the plain adversarial loss.
+                    r1_gamma = self._cfg_get(self.adversarial_cfg, "r1_gamma", 0.0)
+                    if r1_gamma > 0:
+                        real_x = reco_in[:batch_size].detach().requires_grad_(True)
+                        real_c = reco_ctxt[:batch_size].detach()
+                        p_real = self.disc_reco(real_x, real_c).clamp(1e-6, 1 - 1e-6)
+                        logit_real = torch.log(p_real) - torch.log1p(-p_real)
+                        grad_x = torch.autograd.grad(logit_real.sum(), real_x, create_graph=True)[0]
+                        r1 = grad_x.pow(2).sum(dim=1).mean()
+                        self.log("d_r1", r1, prog_bar=False)
+                        d_loss_gen_total = d_loss_gen + 0.5 * r1_gamma * r1
+                    self.manual_backward(d_loss_gen_total, retain_graph=True)
                     self.clip_gradients(optimizer_d2, gradient_clip_val=self.gradient_clip_val)
                     optimizer_d2.step()
                     self.untoggle_optimizer(optimizer_d2)
@@ -1837,7 +1880,8 @@ class TRANSIT(LightningModule):
 
     def on_train_batch_start(self, batch, batch_idx) -> None:
         # Shake-Shake blocks with per_step=True reuse one draw of their mixing
-        # coefficients for every pass of a training step; start each step fresh.
+        # coefficients for every pass of a training step, StepDropout layers one
+        # dropout mask; start each step fresh.
         for module in self.modules():
             if hasattr(module, "resample") and hasattr(module, "_step_cache"):
                 module.resample()
@@ -1874,8 +1918,10 @@ class TRANSIT(LightningModule):
     def on_save_checkpoint(self, checkpoint) -> None:
         if not self.use_ema:
             return
+        # CPU copies: the checkpoint layout stays as before (CPU shadow tensors), so CPU-only export / evaluation jobs
+        # load GPU-trained checkpoints unchanged; the live shadow stays on the model device
         checkpoint["ema_state"] = {
-            "shadow": self._ema_shadow,
+            "shadow": {name: tensor.detach().to("cpu") for name, tensor in self._ema_shadow.items()},
             "num_updates": self._ema_num_updates,
         }
 
@@ -1884,6 +1930,10 @@ class TRANSIT(LightningModule):
             return
         ema_state = checkpoint["ema_state"]
         self._ema_shadow = ema_state.get("shadow", {})
+        if self.ema_device == "cpu":
+            self._ema_shadow = {name: tensor.to("cpu") for name, tensor in self._ema_shadow.items()}
+        # model mode: the first _ema_update migrates the shadow to the parameter device (loading can happen before
+        # Lightning moves the model to the GPU)
         self._ema_num_updates = int(ema_state.get("num_updates", 0))
 
     _ACTIVATIONS = (
