@@ -1,0 +1,59 @@
+# @package _global_
+# TRANSITpad3v4_full_stat_2x_w256 (2026-10-31): TRANSITpad3v4_full_stat_2x with the encoder / decoder width 128 -> 256
+# (model TRANSITpad3v4_w256, no dropout); everything else identical (2x length, no early stopping).
+# TRANSITpad3v4 (3 hidden residual blocks, spectral norm on the discriminator) with the 33x settings of
+# TRANSITpad3v3_full_stat_2x: validation every epoch, trained 2x longer (whole schedule stretched by 2 in steps).
+
+defaults:
+  - data: PAD_DEFAULT_halfhalf
+  - step_train_template: transitv_0v2
+  - step_export_template: transit
+  - step_evaluate: transit_PAD
+  - override /step_train_template/model: TRANSITpad3v4_w256.yaml
+  - _self_
+
+step_train_template:
+  project_name: pad_transit
+  do_scale_epochs: True
+  trainer:
+    # full_stat (33x pseudodata): epochs are scaled down with the data size
+    # (do_scale_epochs), so validate every epoch, as the other *_full_stat configs do
+    check_val_every_n_epoch: 1
+  # 2x longer training: 2x the batches per epoch (80k -> 160k steps; the adversary
+  # warm-up / milestones are scaled with it by do_scale_epochs) and 2x the cosine LR length
+  batches_per_epoch_desired: 800
+  model:
+    valid_plot_freq: 1
+    scheduler:
+      scheduler:
+        T_max: 200_000
+  preprocessing_pkl: ${general.run_dir}/../data/data/preprocessor.pkl
+
+delete_existing_run_dir: False
+
+do_train_template: True
+do_export_template: True
+do_transport_sideband: False
+do_export_latent: False
+do_evaluation: False
+do_cwola: False
+do_evaluate_cwola: False
+do_plot_compare: False
+
+data:
+  training_batch_size: 2048
+  # Batched data loading (2026-09-30): identical batches to the per-event path, no workers.
+  template_training:
+    batched_fetch: true
+    loader_kwargs:
+      num_workers: 0
+      persistent_workers: false
+
+verbose_validation: True
+
+general:
+  name: TRANSITpad3v4_full_stat_2x_w256
+  seed: 12345 # For reproducibility
+  run_dir: /transit #workspaces/${general.subfolder}${general.name}
+  do_dataset_plots: False
+  
