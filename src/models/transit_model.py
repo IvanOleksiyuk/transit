@@ -1456,6 +1456,10 @@ class TRANSIT(LightningModule):
                     self.clip_gradients(optimizer_d, gradient_clip_val=self.gradient_clip_val)
                     optimizer_d.step()
                     self.untoggle_optimizer(optimizer_d)
+                    # Without a reconstruction discriminator nothing else counts the step, and the generator would
+                    # stay frozen after warmup (the every_n_steps_g check below).
+                    if not self.use_disc_reco:
+                        self.dis_steps_per_gen+=1
                 else:
                     d_loss = 0
                 
@@ -1539,7 +1543,15 @@ class TRANSIT(LightningModule):
                         e_lat = torch.cat([e1, e1_copy], dim=0)
                         m_lat = torch.cat([w2, w2_perm], dim=0)
                         e_lat, m_lat = self._add_disc_noise(e_lat, m_lat)
-                        g_loss = - self.adversarial_loss(self.disc_lat(e_lat, m_lat), labels)
+                        d_lat_out = self.disc_lat(e_lat, m_lat)
+                        # latent_g_loss "minimax" (default): the encoder maximises the discriminator loss, unbounded.
+                        # "confusion" (2026-11-04): the encoder pushes the discriminator towards 0.5, whose minimum is
+                        # independence of latent and mass.
+                        if self._cfg_get(self.adversarial_cfg, "latent_g_loss", "minimax") == "confusion":
+                            g_loss = self.adversarial_loss(d_lat_out, torch.full_like(labels, 0.5))
+                        else:
+                            g_loss = - self.adversarial_loss(d_lat_out, labels)
+                        self.log("g_loss_lat", g_loss)
                         total_loss2 += g_loss*g_loss_weight
                     if self.use_disc_reco:
                         reco_in = torch.cat([w1, generated], dim=0)

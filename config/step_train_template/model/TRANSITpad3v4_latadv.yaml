@@ -1,0 +1,116 @@
+# TRANSITpad3v4_latadv (2026-11-04): TRANSITpad3v4 with the adversary in the LATENT space instead of the input space. The
+# discriminator sees (latent, its mass) as true and (latent, shuffled mass) as false, i.e. the joint against the product of
+# the marginals, and the encoder is trained to make them indistinguishable: explicit decorrelation of the latent from the
+# mass. No reconstruction discriminator (discriminator2). Minimax encoder loss: on a toy (user/studies/latent_adversary) it
+# removed the mass leak, also for masses not in training, where latent_g_loss: confusion left part of it.
+defaults:
+  - _self_
+  - optimizer: AdamW_lr2-4.yaml
+  - scheduler: cyclic.yaml
+
+network_type: partial_context
+_target_: transit.src.models.transit_model.TRANSIT
+use_m_encodig: True
+encoder_cfg: 
+  _target_: transit.mattstools.mattstools.modules_myy.DenseNetwork
+  _partial_: true
+  act_h: silu
+  act_i: none
+  nrm: none
+  hddn_dim: 128
+  num_blocks: 4
+  n_lyr_pbk: 2
+  do_res: True
+  scale_output_hidden: "pm1"
+  ctxt_in_inpt: True
+  ctxt_in_hddn: True
+  ctxt_in_out: False
+decoder_cfg:
+  _target_: transit.mattstools.mattstools.modules_myy.DenseNetwork
+  _partial_: true
+  act_h: silu
+  act_i: none
+  nrm: none
+  hddn_dim: 128
+  num_blocks: 4
+  n_lyr_pbk: 2
+  do_res: True
+  scale_output_hidden: "pm1"
+  ctxt_in_inpt: True
+  ctxt_in_hddn: True
+  ctxt_in_out: False
+spectral_norm_cfg:
+  discriminator: True
+latent_norm: False
+latent_dim: auto
+loss_cfg:
+  reco:
+    w: 1
+  consistency_x:
+    w: 0.2
+  latent_variance_cfg:
+    w: 0.02
+    pow: 1
+  latent_mean_cfg:
+    w: 0.02
+  rot_loss_cfg:
+    w: 0.05
+    eps_scale: 0.01
+
+adversarial_cfg:
+  mode: "double_discriminator"
+  label_smoothing_eps: 0.1
+  discriminator:
+    _target_: transit.mltools.mlp.MLP
+    _partial_: true
+    outp_dim: 1
+    hddn_dim: [128, 128, 128, 128]
+    ctxt_in_hddn: True
+    ctxt_in_inpt: True
+    act_h: "prelu"
+    act_o: "sigmoid"
+  latent_g_loss: minimax
+  optimizer_main: default.yaml
+  optimizer_d: default.yaml
+  warmup: 0 #Number of warmup epochs
+  warmup_steps: 200 #Number of wamup steps after the end of warmup epochs
+  g_loss_weight: 0.2
+  g_loss_gen_weight: 0
+  every_n_steps_g: 1
+  train_dis_in_warmup: False
+  g_loss_weight_in_warmup: False
+  loss_function: "binary_cross_entropy"
+  scheduler: 
+    scheduler_g:
+      _target_: torch.optim.lr_scheduler.MultiStepLR
+      _partial_: True
+      milestones: [30, 100, 150, 175, 200, 250]
+      gamma: 0.5
+    scheduler_d:
+      _target_: torch.optim.lr_scheduler.MultiStepLR
+      _partial_: True
+      milestones: [30, 100, 150, 175]
+      gamma: 0.5
+    scheduler_d2:
+      _target_: torch.optim.lr_scheduler.MultiStepLR
+      _partial_: True
+      milestones: [30, 100, 150, 175]
+      gamma: 0.5
+  gradient_clip_val: 0.1
+
+ema_cfg:
+  enabled: True
+  decay: 0.98
+  update_every: 1
+  device: model  # model = keep the EMA on the training device (2026-10-29); cpu = offload to host RAM
+
+input_noise_cfg:
+  noise_std: 0.1
+
+valid_plots: ${verbose_validation}
+add_standardizing_layer: True
+reverse_pass_mode: additional_input
+afterglow_epoch: 999999999
+
+# training mass-debug metrics every N global steps (0 = off), 2026-10-29
+mass_debug_log_every_n_steps: 100
