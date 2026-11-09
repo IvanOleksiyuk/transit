@@ -1,0 +1,51 @@
+# @package _global_
+# TRANSITpad3v7_2x (2026-11-09, study): TRANSITpad3v7 (release v3 at 3 %) trained 2x longer, as TRANSITpad3v7l does at 33x:
+# 2x the batches per epoch (400 -> 800, ~80k -> ~160k steps; adversary warm-up / milestones scale with it through
+# do_scale_epochs) and 2x the cosine LR length (T_max 100k -> 200k). Same model and batches otherwise.
+# Question: does longer training lower the LaTRANSIT SB closure AUC (0.526 window mean in 69-214, one gseed at 0.5306)?
+
+defaults:
+  - data: PAD_DEFAULT_halfhalf
+  - step_train_template: transitv_0v2
+  - step_export_template: transit
+  - step_evaluate: transit_PAD
+  - override /step_train_template/model: TRANSITpad3v4.yaml
+  - _self_
+
+step_train_template:
+  project_name: pad_transit
+  do_scale_epochs: True
+  trainer:
+    check_val_every_n_epoch: 10
+  batches_per_epoch_desired: 800
+  model:
+    valid_plot_freq: 9
+    scheduler:
+      scheduler:
+        T_max: 200_000
+  preprocessing_pkl: ${general.run_dir}/../data/data/preprocessor.pkl
+
+delete_existing_run_dir: False
+
+do_train_template: True
+do_export_template: True
+do_transport_sideband: False
+do_export_latent: False
+do_evaluation: False
+do_cwola: False
+do_evaluate_cwola: False
+do_plot_compare: False
+
+data:
+  training_batch_size: 2048
+  template_training:
+    natural_batch_fraction: 0.5
+
+verbose_validation: True
+
+general:
+  name: TRANSITpad3v7_2x
+  seed: 12345 # For reproducibility
+  run_dir: /transit #workspaces/${general.subfolder}${general.name}
+  do_dataset_plots: False
+  
